@@ -87,6 +87,12 @@ pub enum LlmError {
     BadResponse(String),
 }
 
+/// ¿El mensaje de un error 429 habla de cuota o saldo agotados, en vez de un límite de ritmo?
+fn is_quota_message(message: &str) -> bool {
+    let message = message.to_lowercase();
+    ["quota", "billing", "credit", "insufficient"].iter().any(|word| message.contains(word))
+}
+
 impl fmt::Display for LlmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -99,8 +105,14 @@ impl fmt::Display for LlmError {
             LlmError::Api { status: 400 | 401 | 403, message } => {
                 write!(f, "el servicio de IA rechazó la petición: {message}. Revisa tu API key con /key")
             }
-            LlmError::Api { status: 429, .. } => {
-                write!(f, "se superó el límite de uso del servicio de IA; espera un momento e inténtalo de nuevo")
+            // Un 429 puede ser «demasiadas peticiones seguidas» (se arregla esperando) o «sin cuota ni saldo» (no se
+            // arregla esperando): el servicio lo distingue en su mensaje y hay que enseñárselo al usuario.
+            LlmError::Api { status: 429, message } if is_quota_message(message) => write!(
+                f,
+                "el servicio de IA dice que tu cuenta no tiene cuota o saldo disponible: «{message}». Esperar no lo arregla:                  revisa los créditos y la facturación de tu cuenta de API (por ejemplo, en OpenAI una suscripción de ChatGPT no                  incluye saldo de API) o cambia de proveedor en Ajustes > IA"
+            ),
+            LlmError::Api { status: 429, message } => {
+                write!(f, "el servicio de IA recibió demasiadas peticiones seguidas ({message}); espera un momento e inténtalo de nuevo")
             }
             LlmError::Api { status, message } => write!(f, "error {status} del servicio de IA: {message}"),
             LlmError::Blocked(reason) => write!(f, "el servicio de IA bloqueó la respuesta ({reason})"),
@@ -127,6 +139,20 @@ pub trait LlmProvider: Send + Sync {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn un_429_de_cuota_agotada_no_dice_que_basta_con_esperar() {
+        let quota = LlmError::Api { status: 429, message: "You exceeded your current quota, please check your plan and billing details.".into() }.to_string();
+        assert!(quota.contains("exceeded your current quota") && quota.contains("Esperar no lo arregla"), "{quota}");
+        let credit = LlmError::Api { status: 429, message: "insufficient_quota".into() }.to_string();
+        assert!(credit.contains("cuota o saldo"), "{credit}");
+    }
+
+    #[test]
+    fn un_429_de_ritmo_si_pide_esperar_y_enseña_el_motivo() {
+        let rate = LlmError::Api { status: 429, message: "Rate limit reached for requests per min. Please try again in 20s.".into() }.to_string();
+        assert!(rate.contains("espera un momento") && rate.contains("Rate limit reached"), "{rate}");
+        assert!(!rate.contains("cuota o saldo"));
+    }
     use super::*;
 
     #[test]

@@ -100,6 +100,11 @@ mod tests {
                 let value = entry[color].as_str().unwrap_or("#000000");
                 assert!(value.len() == 7 && value.starts_with('#') && value[1..].chars().all(|c| c.is_ascii_hexdigit()), "{id}: {color} no es un color #rrggbb");
             }
+            if let Some(phones) = entry.get("headphones") {
+                let (x, y, width) = (phones["x"].as_f64().unwrap(), phones["y"].as_f64().unwrap(), phones["width"].as_f64().unwrap());
+                assert!((0.0..=100.0).contains(&x) && (0.0..=100.0).contains(&y) && (10.0..=90.0).contains(&width), "{id}: auriculares fuera del sprite");
+                assert!(assets_dir().join("headphones").join(format!("{id}.png")).is_file(), "{id}: falta assets/headphones/{id}.png");
+            }
             for (state, spec) in entry["states"].as_object().into_iter().flatten() {
                 // Una animación de estado sin carpeta propia reutiliza los frames del personaje.
                 if let Some(sequence) = spec["sequence"].as_array() {

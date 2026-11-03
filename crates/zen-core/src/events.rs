@@ -24,6 +24,10 @@ pub enum Event {
     DownloadFinished { name: String },
     /// Se conectó una unidad extraíble (memoria USB, lector de tarjetas): su letra.
     UsbConnected { drive: char },
+    /// Empezó a sonar música (o un vídeo) en el equipo, en cualquier aplicación.
+    MusicStarted,
+    /// Dejó de sonar todo lo que sonaba.
+    MusicStopped,
     /// Un recordatorio vence en pocos minutos (por ejemplo, una reunión).
     ReminderSoon { text: String, minutes: u64 },
     /// Avance de una tarea de varios pasos: se va a ejecutar el paso `step` (desde 1) de `total`.

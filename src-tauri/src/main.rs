@@ -27,6 +27,7 @@ mod alarms;
 mod behavior;
 mod characters;
 mod media;
+mod music;
 mod notify;
 mod power;
 mod secrets;
@@ -394,6 +395,7 @@ fn get_settings(app: AppHandle) -> Value {
         "computer_control": settings.computer_control,
         "memory_enabled": settings.memory_enabled,
         "usage_comments": settings.usage_comments,
+        "music_reaction": settings.music_reaction,
     })
 }
 #[tauri::command]
@@ -486,6 +488,7 @@ fn set_behavior(app: AppHandle, name: String, enabled: bool) -> Result<(), Strin
             settings.look_at_cursor = enabled;
             flags.look_at_cursor.store(enabled, std::sync::atomic::Ordering::Relaxed);
         }
+        "music_reaction" => settings.music_reaction = enabled,
         _ => return Err(format!("Comportamiento desconocido: {name}")),
     }
     settings.save()
@@ -753,6 +756,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 
 fn main() {
     tauri::Builder::default()
+        .manage(music::MusicFlag::default())
         // Debe ser el primer plugin: si ya hay una copia en marcha, esta se cierra y abre el chat de la otra.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_chat(app)))
         .plugin(
@@ -795,6 +799,7 @@ fn main() {
             get_character,
             set_character,
             open_link,
+            music::is_music_playing,
             media::get_media,
             media::media_control,
             list_apps,
@@ -853,6 +858,7 @@ fn main() {
             system_events::spawn(app.handle().clone(), reminders.clone());
             alarms::spawn(app.handle().clone(), reminders);
             media::spawn(app.handle().clone());
+            music::spawn(app.handle().clone());
             notify::spawn(app.handle().clone());
             power::spawn(app.handle().clone());
             usage::spawn(app.handle().clone());

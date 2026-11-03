@@ -485,6 +485,7 @@ const autostartBox = document.getElementById("autostart");
 const autostartMessage = document.getElementById("autostart-message");
 const wanderBox = document.getElementById("behavior-wander");
 const lookBox = document.getElementById("behavior-look");
+const musicBox = document.getElementById("music-reaction");
 const behaviorMessage = document.getElementById("behavior-message");
 const soundBox = document.getElementById("sound-enabled");
 const volumeInput = document.getElementById("sound-volume");
@@ -553,6 +554,7 @@ function renderSettings() {
   nameInput.value = settings.assistant_name;
   wanderBox.checked = settings.wander;
   lookBox.checked = settings.look_at_cursor;
+  musicBox.checked = settings.music_reaction;
   soundBox.checked = settings.sound_enabled;
   volumeInput.value = settings.sound_volume;
   volumeInput.disabled = testSoundButton.disabled = !settings.sound_enabled;
@@ -772,6 +774,7 @@ async function changeSetting(messageEl, command, args) {
 
 wanderBox.addEventListener("change", () => changeSetting(behaviorMessage, "set_behavior", { name: "wander", enabled: wanderBox.checked }));
 lookBox.addEventListener("change", () => changeSetting(behaviorMessage, "set_behavior", { name: "look_at_cursor", enabled: lookBox.checked }));
+musicBox.addEventListener("change", () => changeSetting(behaviorMessage, "set_behavior", { name: "music_reaction", enabled: musicBox.checked }));
 // Recuerdos: se leen al abrir la sección y tras cada cambio.
 async function loadMemories() {
   try {

@@ -17,11 +17,13 @@ pub struct Character {
     state: State,
     entered_at: Instant,
     last_activity: Instant,
+    /// Suena música: se queda despierta disfrutándola en lugar de dormirse.
+    listening: bool,
 }
 
 impl Character {
     pub fn new(now: Instant) -> Self {
-        Self { state: State::Idle, entered_at: now, last_activity: now }
+        Self { state: State::Idle, entered_at: now, last_activity: now, listening: false }
     }
 
     pub fn state(&self) -> State {
@@ -33,6 +35,11 @@ impl Character {
         // Lo que la mascota hace por su cuenta no cuenta como actividad: si no, nunca llegaría a dormirse.
         if !matches!(event, Event::WalkStarted { .. } | Event::WalkFinished | Event::RandomAnimation) {
             self.last_activity = now;
+        }
+        match event {
+            Event::MusicStarted => self.listening = true,
+            Event::MusicStopped => self.listening = false,
+            _ => {}
         }
         self.set(on_event(self.state, event), now)
     }
@@ -46,7 +53,7 @@ impl Character {
             State::Interacting if in_state >= INTERACTION_TIME => State::Idle,
             State::Alert if in_state >= ALERT_TIME => State::Idle,
             State::Thinking | State::Working if in_state >= BUSY_TIMEOUT => State::Idle,
-            State::Idle if idle_for >= SLEEP_AFTER => State::Sleeping,
+            State::Idle if idle_for >= SLEEP_AFTER && !self.listening => State::Sleeping,
             other => other,
         };
         self.set(next, now)
@@ -139,6 +146,32 @@ mod tests {
         busy.handle(&Event::AssistantThinking, t0);
         assert_eq!(busy.handle(&Event::ReminderSoon { text: "x".into(), minutes: 5 }, t0), None);
         assert_eq!(busy.handle(&Event::UsbConnected { drive: 'E' }, t0), None);
+        assert_eq!(busy.state(), State::Thinking);
+    }
+
+    #[test]
+    fn con_musica_no_se_duerme_y_al_acabar_vuelve_a_dormirse() {
+        let t0 = Instant::now();
+        let mut c = Character::new(t0);
+        assert_eq!(c.handle(&Event::MusicStarted, t0), Some(State::Happy));
+        assert_eq!(c.tick(t0 + REACTION_TIME), Some(State::Idle));
+        assert_eq!(c.tick(t0 + SLEEP_AFTER * 4), None, "con música no duerme, por mucho que pase");
+        let end = t0 + SLEEP_AFTER * 4;
+        assert_eq!(c.handle(&Event::MusicStopped, end), None);
+        assert_eq!(c.tick(end + SLEEP_AFTER - Duration::from_secs(1)), None, "el reloj de sueño empieza al acabar");
+        assert_eq!(c.tick(end + SLEEP_AFTER), Some(State::Sleeping));
+    }
+
+    #[test]
+    fn la_musica_despierta_a_quien_dormia_y_no_interrumpe_el_trabajo() {
+        let t0 = Instant::now();
+        let mut asleep = Character::new(t0);
+        asleep.tick(t0 + SLEEP_AFTER);
+        assert_eq!(asleep.state(), State::Sleeping);
+        assert_eq!(asleep.handle(&Event::MusicStarted, t0 + SLEEP_AFTER), Some(State::Idle));
+        let mut busy = Character::new(t0);
+        busy.handle(&Event::AssistantThinking, t0);
+        assert_eq!(busy.handle(&Event::MusicStarted, t0), None);
         assert_eq!(busy.state(), State::Thinking);
     }
 

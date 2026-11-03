@@ -43,6 +43,9 @@ pub fn on_event(state: State, event: &Event) -> State {
         (Thinking | Working | Alert, BatteryLow { .. } | RestSuggested { .. }) => state,
         (_, BatteryLow { .. } | RestSuggested { .. }) => Alert,
         (Idle | Walking | Sleeping, BatteryCharged | DownloadFinished { .. }) => Happy,
+        // Con música se alegra si está en reposo y se despierta si dormía; ocupada o paseando, no se interrumpe.
+        (Idle, MusicStarted) => Happy,
+        (Sleeping, MusicStarted) => Idle,
         (Idle | Walking | Sleeping, UsbConnected { .. }) => Surprised,
         // El aviso previo de un recordatorio también llama la atención, pero sin interrumpir lo que haces.
         (Thinking | Working | Alert, ReminderSoon { .. }) => state,
