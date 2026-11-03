@@ -96,6 +96,16 @@ mod tests {
                 let path = assets_dir().join(folder).join(&name);
                 assert!(path.is_file(), "{id}: falta el frame {n}: {}", path.display());
             }
+            for (state, spec) in entry["states"].as_object().into_iter().flatten() {
+                // Una animación de estado sin carpeta propia reutiliza los frames del personaje.
+                if let Some(sequence) = spec["sequence"].as_array() {
+                    assert!(!sequence.is_empty(), "{id}/{state}: secuencia vacía");
+                    for n in sequence {
+                        let n = n.as_u64().unwrap_or(0);
+                        assert!((1..=frames).contains(&n), "{id}/{state}: el frame {n} no existe");
+                    }
+                }
+            }
         }
     }
 }

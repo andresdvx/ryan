@@ -1,5 +1,5 @@
 {
-  "_states": "Opcional: dentro de un personaje, \"states\": { \"sleeping\": { \"folder\": \"...\", \"pattern\": \"x_{nn}.png\", \"frames\": 6 } } da una animación propia a ese estado (idle, walking, thinking, working, success, happy, surprised, interacting, alert, sleeping). Sin ella se usa la de reposo.",
+  "_states": "Opcional: dentro de un personaje, \"states\": { \"sleeping\": { \"folder\": \"...\", \"pattern\": \"x_{nn}.png\", \"frames\": 6 } } da una animación propia a ese estado (idle, walking, thinking, working, success, happy, surprised, interacting, alert, sleeping). Sin ella se usa la de reposo. Si el personaje ya tiene las poses que hacen falta, basta \"sleeping\": { \"sequence\": [3, 10, 11, 10] }: los números son frames de su propia carpeta (el primero es el 1) y pueden repetirse para dar ritmo.",
   "default": "zen",
   "characters": [
     {
@@ -36,7 +36,36 @@
       "pattern": "sprite_{nn}.png",
       "frames": 12,
       "preview_frame": 1,
-      "speed": 1.0
+      "speed": 1.0,
+      "states": {
+        "sleeping": { "sequence": [3, 10, 11, 10] },
+        "thinking": { "sequence": [1, 5, 6, 1, 8, 12] },
+        "working": { "sequence": [2, 7, 2, 9] },
+        "success": { "sequence": [4, 9, 4, 1] },
+        "happy": { "sequence": [4, 1, 4, 9] },
+        "surprised": { "sequence": [2, 9, 2, 7] },
+        "interacting": { "sequence": [4, 1, 4, 2] },
+        "alert": { "sequence": [2, 5, 2, 8] }
+      }
+    },
+    {
+      "id": "bandit",
+      "name": "Bandit",
+      "folder": "bandit",
+      "pattern": "sprite_{nn}.png",
+      "frames": 12,
+      "preview_frame": 1,
+      "speed": 1.0,
+      "states": {
+        "sleeping": { "sequence": [3, 4, 6, 5] },
+        "thinking": { "sequence": [1, 7, 8, 7, 9, 1] },
+        "working": { "sequence": [2, 9, 10, 9] },
+        "success": { "sequence": [12, 2, 12, 1] },
+        "happy": { "sequence": [2, 9, 2, 12] },
+        "surprised": { "sequence": [2, 10, 2, 9] },
+        "interacting": { "sequence": [1, 2, 1, 12] },
+        "alert": { "sequence": [2, 7, 2, 8] }
+      }
     }
   ]
 }

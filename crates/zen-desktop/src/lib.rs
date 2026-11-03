@@ -10,6 +10,7 @@ mod input_tools;
 mod locations;
 pub mod media_session;
 pub mod memory;
+pub mod mood;
 mod media_tools;
 mod move_tools;
 mod music_tools;
@@ -24,6 +25,7 @@ mod reminders;
 mod screen;
 mod screen_tools;
 pub mod sound;
+pub mod system_events;
 pub mod usage;
 mod system_tools;
 #[cfg(test)]

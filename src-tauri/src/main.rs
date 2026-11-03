@@ -30,6 +30,7 @@ mod media;
 mod notify;
 mod power;
 mod secrets;
+mod system_events;
 mod usage;
 mod settings;
 
@@ -217,7 +218,21 @@ impl AssistantUi for ChatUi {
 
     /// La IA no tiene reloj: sin esto no podría convertir «a las 17:30» o «dentro de un rato» en algo exacto.
     fn context(&self) -> String {
-        let time = format!("Fecha y hora local del usuario: {}.", zen_desktop::LocalNow::now().describe());
+        let now = zen_desktop::LocalNow::now();
+        let time = format!("Fecha y hora local del usuario: {}.", now.describe());
+        // Cuánto llevas trabajando es un dato de uso: si apagaste los comentarios sobre el equipo, no se usa.
+        let worked_minutes = match self.app.try_state::<usage::Activity>() {
+            Some(activity) if Settings::load().usage_comments => activity.worked_minutes(),
+            _ => 0,
+        };
+        let mood = zen_desktop::mood::mood_section(zen_desktop::mood::MoodInput {
+            hour: now.hour,
+            battery: zen_desktop::power::read_battery(),
+            worked_minutes,
+        });
+        let time = format!("{time}
+
+{mood}");
         match self.app.try_state::<Arc<zen_desktop::Memory>>() {
             Some(memory) if !memory.prompt_section().is_empty() => format!("{time}
 
@@ -375,6 +390,7 @@ fn get_settings(app: AppHandle) -> Value {
         "sound_enabled": settings.sound_enabled,
         "sound_volume": settings.sound_volume,
         "battery_alerts": settings.battery_alerts,
+        "system_events": settings.system_events,
         "computer_control": settings.computer_control,
         "memory_enabled": settings.memory_enabled,
         "usage_comments": settings.usage_comments,
@@ -475,9 +491,9 @@ fn set_behavior(app: AppHandle, name: String, enabled: bool) -> Result<(), Strin
     settings.save()
 }
 
-/// Sonidos y avisos: `enabled`/`volume` (0-100) de los sonidos, y `battery_alerts`. Cada campo es opcional.
+/// Sonidos y avisos: `enabled`/`volume` (0-100) de los sonidos, `battery_alerts` y `system_events`. Cada campo es opcional.
 #[tauri::command]
-fn set_sound(enabled: Option<bool>, volume: Option<u32>, battery_alerts: Option<bool>) -> Result<(), String> {
+fn set_sound(enabled: Option<bool>, volume: Option<u32>, battery_alerts: Option<bool>, system_events: Option<bool>) -> Result<(), String> {
     let mut settings = Settings::load();
     if let Some(enabled) = enabled {
         settings.sound_enabled = enabled;
@@ -487,6 +503,9 @@ fn set_sound(enabled: Option<bool>, volume: Option<u32>, battery_alerts: Option<
     }
     if let Some(alerts) = battery_alerts {
         settings.battery_alerts = alerts;
+    }
+    if let Some(events) = system_events {
+        settings.system_events = events;
     }
     settings.save()
 }
@@ -831,6 +850,7 @@ fn main() {
             register_shortcut(app.handle(), &settings.shortcut);
             build_tray(app.handle())?;
             // Al final: los avisos usan el bus de eventos, que ya debe estar registrado.
+            system_events::spawn(app.handle().clone(), reminders.clone());
             alarms::spawn(app.handle().clone(), reminders);
             media::spawn(app.handle().clone());
             notify::spawn(app.handle().clone());

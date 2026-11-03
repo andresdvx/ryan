@@ -14,9 +14,22 @@ const POLL: Duration = Duration::from_secs(30);
 /// El chat tarda un momento en cargar al arrancar: el saludo espera para no perderse.
 const GREETING_DELAY: Duration = Duration::from_secs(5);
 
+/// Lo que el resto de la aplicación puede saber de tu actividad: solo cuánto llevas trabajando.
+pub struct Activity {
+    tracker: Arc<Mutex<UsageTracker>>,
+    started: Instant,
+}
+
+impl Activity {
+    pub fn worked_minutes(&self) -> u64 {
+        self.tracker.lock().expect("seguimiento envenenado").worked_secs(self.started.elapsed().as_secs()) / 60
+    }
+}
+
 pub fn spawn(app: AppHandle) {
     let tracker = Arc::new(Mutex::new(UsageTracker::default()));
     let started = Instant::now();
+    app.manage(Activity { tracker: tracker.clone(), started });
 
     // Lo que cuenta como «hacerle caso» a la mascota.
     let events = app.state::<Arc<EventBus>>().subscribe();

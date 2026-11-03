@@ -39,6 +39,8 @@ pub struct Settings {
     pub sound_volume: u8,
     /// Avisar cuando la batería se agota o termina de cargarse.
     pub battery_alerts: bool,
+    /// Avisar cuando termina una descarga o se conecta una unidad USB.
+    pub system_events: bool,
     /// Recordar cosas del usuario entre sesiones (ver `zen_desktop::memory`).
     pub memory_enabled: bool,
     /// La mascota comenta el uso del equipo: saludos, descansos, aburrimiento.
@@ -67,6 +69,7 @@ impl Default for Settings {
             sound_enabled: true,
             sound_volume: DEFAULT_SOUND_VOLUME,
             battery_alerts: true,
+            system_events: true,
             computer_control: false,
             memory_enabled: true,
             usage_comments: true,
@@ -154,6 +157,7 @@ impl Settings {
             sound_enabled: value["sound"]["enabled"].as_bool().unwrap_or(true),
             sound_volume: value["sound"]["volume"].as_u64().map(|v| zen_desktop::sound::clamp_volume(v.min(u32::MAX as u64) as u32)).unwrap_or(DEFAULT_SOUND_VOLUME),
             battery_alerts: value["battery_alerts"].as_bool().unwrap_or(true),
+            system_events: value["system_events"].as_bool().unwrap_or(true),
             // Solo un «true» explícito lo activa: un valor raro o ausente lo deja apagado.
             computer_control: value["computer_control"].as_bool().unwrap_or(false),
             memory_enabled: value["memory_enabled"].as_bool().unwrap_or(true),
@@ -186,6 +190,7 @@ impl Settings {
             "assistant_name": self.assistant_name,
             "sound": { "enabled": self.sound_enabled, "volume": self.sound_volume },
             "battery_alerts": self.battery_alerts,
+            "system_events": self.system_events,
             "computer_control": self.computer_control,
             "memory_enabled": self.memory_enabled,
             "usage_comments": self.usage_comments,
@@ -317,6 +322,7 @@ mod tests {
         settings.sound_enabled = false;
         settings.sound_volume = 73;
         settings.battery_alerts = false;
+        settings.system_events = false;
         settings.computer_control = true;
         settings.memory_enabled = false;
         settings.usage_comments = false;
@@ -412,7 +418,7 @@ mod tests {
         assert!(settings.wander && settings.look_at_cursor, "por defecto la mascota pasea y mira");
         assert_eq!(settings.character, crate::characters::default_id(), "un personaje inexistente vuelve al de por defecto");
         assert_eq!(settings.assistant_name, "Ryan", "un nombre inválido vuelve al de por defecto");
-        assert!(settings.sound_enabled && settings.battery_alerts);
+        assert!(settings.sound_enabled && settings.battery_alerts && settings.system_events);
         assert!(settings.memory_enabled && settings.usage_comments, "por defecto la memoria y los comentarios están activos");
         assert!(!settings.computer_control, "el control de otras aplicaciones nunca se activa por un dato raro");
         assert_eq!(settings.sound_volume, 100, "un volumen exagerado se limita");

@@ -42,7 +42,7 @@ Está escrito en **Rust** con **Tauri 2**, y puede usar **Gemini, Claude, OpenAI
 
 ### Personajes
 
-Trae cuatro personajes; puedes [añadir los tuyos](#añadir-un-personaje).
+Trae cinco personajes; puedes [añadir los tuyos](#añadir-un-personaje).
 
 <table>
   <tr>
@@ -50,6 +50,7 @@ Trae cuatro personajes; puedes [añadir los tuyos](#añadir-un-personaje).
     <td align="center"><img src="assets/poring/standing/sprite_04.png" alt="Poring" height="96"><br>Slime</td>
     <td align="center"><img src="assets/fairy/sprite_01.png" alt="Fairy" height="96"><br>Paimon</td>
     <td align="center"><img src="assets/pingu/sprite_01.png" alt="Pingu" height="96"><br>Pingu</td>
+    <td align="center"><img src="assets/bandit/sprite_01.png" alt="Bandit" height="96"><br>Bandit</td>
   </tr>
 </table>
 
@@ -57,7 +58,7 @@ Trae cuatro personajes; puedes [añadir los tuyos](#añadir-un-personaje).
 
 | Área | Ejemplos |
 | --- | --- |
-| **Personaje** | Se anima según lo que hace (reposo, pensando, trabajando, contenta…), pasea por el escritorio, mira hacia el cursor, avisa con la batería baja y sugiere descansos. |
+| **Personaje** | Se anima según lo que hace (reposo, pensando, trabajando, contenta…), pasea por el escritorio, mira hacia el cursor, avisa con la batería baja y sugiere descansos. Su tono cambia con la hora, la batería y cuánto llevas trabajando, y reacciona cuando termina una descarga, conectas una memoria USB o se acerca un recordatorio. |
 | **Archivos** | Crear, leer, buscar, mover, renombrar y **borrar enviando a la Papelera de Windows** (recuperable, nunca permanente). Organizar una carpeta por tipos y deshacerlo. Solo en Escritorio, Documentos y Descargas. |
 | **Programas y web** | Abrir las aplicaciones que tú permitas, abrir sitios web, buscar en internet con la búsqueda integrada de Gemini, Claude u OpenAI. |
 | **Música y vídeo** | Reproducir una canción en la **app de escritorio de Spotify**, en YouTube Music o en YouTube. Reproductor en el chat con pausa, anterior y siguiente para lo que suene en Windows. |
@@ -95,6 +96,12 @@ git clone https://github.com/andresdvx/ryan.git
 cd ryan
 ```
 
+### Un compañero con carácter
+
+- **Ánimo:** antes de cada respuesta, la IA recibe una pista de estilo según la hora (más suave de madrugada, más animado por la mañana), la batería (más breve si queda poca) y cuánto llevas sin una pausa (te sugiere descansar). Solo cambia el tono, nunca lo que hace ni sus reglas. La duración de tu racha de trabajo solo se usa si dejas activados los comentarios sobre el uso del equipo (*Ajustes > Compañero*).
+- **Avisos del equipo** (*Ajustes > Avisos*): te avisa cuando termina una descarga en la carpeta Descargas o conectas una memoria USB. Solo mira los nombres de los archivos, nunca su contenido.
+- **Recordatorios:** además del aviso al vencer, te avisa 10 minutos antes (útil para reuniones).
+
 ## Configuración
 
 No hay archivos de configuración que editar a mano: todo se hace desde la propia aplicación, en la pestaña **Ajustes** del chat.
@@ -121,7 +128,7 @@ Elige *Ollama (modelo local)*; mira [Modelos locales con Ollama](#modelos-locale
 | --- | --- |
 | **Compañero** | Nombre del asistente (la IA lo conoce), avatar, si pasea y mira al cursor, comentarios sobre tu uso del equipo y memoria. |
 | **IA** | Proveedor, modelo, API key o dirección de Ollama. |
-| **Avisos** | Sonidos y volumen, avisos de batería. |
+| **Avisos** | Sonidos y volumen, avisos de batería, y avisos de descargas terminadas y memorias USB conectadas. |
 | **Sistema** | Atajo de teclado, iniciar con Windows y qué aplicaciones puede abrir la IA. |
 | **Seguridad** | Confirmación en todas las acciones, control de otras aplicaciones y qué herramientas están activas. |
 
@@ -228,7 +235,11 @@ Lo que escribes en el chat se envía al proveedor de IA que hayas elegido (con O
    }
    ```
 
-   `{n}` es el número sin ceros (1, 2…) y `{nn}` con dos cifras (01, 02…). Se compila de nuevo y aparece en *Ajustes > Compañero > Avatar*. El archivo explica además cómo darle una animación propia a cada estado.
+   `{n}` es el número sin ceros (1, 2…) y `{nn}` con dos cifras (01, 02…). Se compila de nuevo y aparece en *Ajustes > Compañero > Avatar*. El archivo explica además cómo darle una animación propia a cada estado: con otra carpeta de frames o, si el personaje ya tiene las poses que hacen falta, con una lista de frames propios. Pingu lo hace así:
+
+   ```json
+   "states": { "sleeping": { "sequence": [3, 10, 11, 10] }, "thinking": { "sequence": [1, 5, 6, 1, 8, 12] } }
+   ```
 
 ### Añadir una herramienta
 

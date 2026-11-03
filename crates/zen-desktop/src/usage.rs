@@ -57,6 +57,11 @@ impl UsageTracker {
         self.last_interaction = Some(now);
     }
 
+    /// Segundos seguidos de trabajo hasta `now` (0 si acabas de volver de una pausa).
+    pub fn worked_secs(&self, now: u64) -> u64 {
+        self.streak_start.map_or(0, |start| now.saturating_sub(start))
+    }
+
     /// Llamar cada poco con los segundos de inactividad y el reloj (en segundos, solo creciente).
     pub fn observe(&mut self, idle_secs: u64, now: u64) -> Option<UsageNotice> {
         let started = *self.started.get_or_insert(now);

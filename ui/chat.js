@@ -370,6 +370,7 @@ const volumeInput = document.getElementById("sound-volume");
 const volumeValue = document.getElementById("sound-volume-value");
 const testSoundButton = document.getElementById("test-sound");
 const batteryBox = document.getElementById("battery-alerts");
+const systemEventsBox = document.getElementById("system-events");
 const soundMessage = document.getElementById("sound-message");
 const usageBox = document.getElementById("usage-comments");
 const memoryBox = document.getElementById("memory-enabled");
@@ -436,6 +437,7 @@ function renderSettings() {
   volumeInput.disabled = testSoundButton.disabled = !settings.sound_enabled;
   volumeValue.textContent = `${settings.sound_volume}%`;
   batteryBox.checked = settings.battery_alerts;
+  systemEventsBox.checked = settings.system_events;
   usageBox.checked = settings.usage_comments;
   memoryBox.checked = settings.memory_enabled;
   ccState.textContent = settings.computer_control ? "activado" : "desactivado";
@@ -698,6 +700,7 @@ document.getElementById("cc-cancel").addEventListener("click", () => (ccWarning.
 document.getElementById("cc-confirm").addEventListener("click", () => changeSetting(ccMessage, "set_computer_control", { enabled: true }));
 soundBox.addEventListener("change", () => changeSetting(soundMessage, "set_sound", { enabled: soundBox.checked }));
 batteryBox.addEventListener("change", () => changeSetting(soundMessage, "set_sound", { batteryAlerts: batteryBox.checked }));
+systemEventsBox.addEventListener("change", () => changeSetting(soundMessage, "set_sound", { systemEvents: systemEventsBox.checked }));
 volumeInput.addEventListener("input", () => (volumeValue.textContent = `${volumeInput.value}%`));
 volumeInput.addEventListener("change", () => changeSetting(soundMessage, "set_sound", { volume: Number(volumeInput.value) }));
 testSoundButton.addEventListener("click", () => invoke("test_sound", { volume: Number(volumeInput.value) }));
