@@ -1,9 +1,12 @@
 {
   "_states": "Opcional: dentro de un personaje, \"states\": { \"sleeping\": { \"folder\": \"...\", \"pattern\": \"x_{nn}.png\", \"frames\": 6 } } da una animación propia a ese estado (idle, walking, thinking, working, success, happy, surprised, interacting, alert, sleeping). Sin ella se usa la de reposo. Si el personaje ya tiene las poses que hacen falta, basta \"sleeping\": { \"sequence\": [3, 10, 11, 10] }: los números son frames de su propia carpeta (el primero es el 1) y pueden repetirse para dar ritmo.",
+  "_theme": "Opcional: \"accent\" y \"accent2\" (#rrggbb) son los colores del chat cuando se elige este personaje.",
   "default": "zen",
   "characters": [
     {
       "id": "zen",
+      "accent": "#8b7bff",
+      "accent2": "#5b8cff",
       "name": "Zen",
       "folder": "character/standing",
       "pattern": "character-{n}.png",
@@ -13,6 +16,8 @@
     },
     {
       "id": "poring",
+      "accent": "#ee6aa7",
+      "accent2": "#c94f9b",
       "name": "Poring",
       "folder": "poring/standing",
       "pattern": "sprite_{nn}.png",
@@ -22,6 +27,8 @@
     },
     {
       "id": "fairy",
+      "accent": "#2fb9a8",
+      "accent2": "#6a8cff",
       "name": "Fairy",
       "folder": "fairy",
       "pattern": "sprite_{nn}.png",
@@ -31,6 +38,8 @@
     },
     {
       "id": "pingu",
+      "accent": "#3aa0f0",
+      "accent2": "#5b6cf0",
       "name": "Pingu",
       "folder": "pingu",
       "pattern": "sprite_{nn}.png",
@@ -50,6 +59,8 @@
     },
     {
       "id": "bandit",
+      "accent": "#e5833a",
+      "accent2": "#cf4f5a",
       "name": "Bandit",
       "folder": "bandit",
       "pattern": "sprite_{nn}.png",
@@ -69,6 +80,8 @@
     },
     {
       "id": "mochi",
+      "accent": "#ee6a3a",
+      "accent2": "#d9435b",
       "name": "Mochi",
       "folder": "mochi",
       "pattern": "sprite_{nn}.png",
@@ -88,6 +101,8 @@
     },
     {
       "id": "ellie",
+      "accent": "#3fae6a",
+      "accent2": "#b8793f",
       "name": "Ellie",
       "folder": "ellie",
       "pattern": "sprite_{nn}.png",

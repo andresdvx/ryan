@@ -100,6 +100,7 @@ cd ryan
 
 ### Un compañero con carácter
 
+- **Un chat con personalidad:** cada amigo tiñe el chat con sus propios colores (campos `accent` y `accent2` en `assets/characters.json`), aparece animado en la cabecera según lo que está haciendo y pone su carita junto a sus mensajes. Saluda según la hora del día y propone ideas para empezar.
 - **Ánimo:** antes de cada respuesta, la IA recibe una pista de estilo según la hora (más suave de madrugada, más animado por la mañana), la batería (más breve si queda poca) y cuánto llevas sin una pausa (te sugiere descansar). Solo cambia el tono, nunca lo que hace ni sus reglas. La duración de tu racha de trabajo solo se usa si dejas activados los comentarios sobre el uso del equipo (*Ajustes > Compañero*).
 - **Avisos del equipo** (*Ajustes > Avisos*): te avisa cuando termina una descarga en la carpeta Descargas o conectas una memoria USB. Solo mira los nombres de los archivos, nunca su contenido.
 - **Recordatorios:** además del aviso al vencer, te avisa 10 minutos antes (útil para reuniones).
