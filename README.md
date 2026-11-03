@@ -42,7 +42,7 @@ Está escrito en **Rust** con **Tauri 2**, y puede usar **Gemini, Claude, OpenAI
 
 ### Personajes
 
-Trae cinco personajes; puedes [añadir los tuyos](#añadir-un-personaje).
+Trae siete personajes; puedes [añadir los tuyos](#añadir-un-personaje).
 
 <table>
   <tr>
@@ -51,6 +51,8 @@ Trae cinco personajes; puedes [añadir los tuyos](#añadir-un-personaje).
     <td align="center"><img src="assets/fairy/sprite_01.png" alt="Fairy" height="96"><br>Paimon</td>
     <td align="center"><img src="assets/pingu/sprite_01.png" alt="Pingu" height="96"><br>Pingu</td>
     <td align="center"><img src="assets/bandit/sprite_01.png" alt="Bandit" height="96"><br>Bandit</td>
+    <td align="center"><img src="assets/mochi/sprite_01.png" alt="Mochi" height="96"><br>Mochi</td>
+    <td align="center"><img src="assets/ellie/sprite_01.png" alt="Ellie" height="96"><br>Ellie</td>
   </tr>
 </table>
 
