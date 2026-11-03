@@ -3,7 +3,20 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #flip { width: 100%; height: 100%; }
 /* Se asume que los sprites miran a la derecha (o de frente); al ir hacia la izquierda se voltean. */
 #pet[data-facing="left"] #flip { transform: scaleX(-1); }
-#sprite { width: 100%; height: 100%; display: block; object-fit: contain; pointer-events: none; transform-origin: 50% 90%; }
+#rig { position: relative; width: 100%; height: 100%; transform-origin: 50% 90%; }
+#sprite { width: 100%; height: 100%; display: block; object-fit: contain; pointer-events: none; }
+/* Auriculares: un sprite aparte, colocado sobre la cabeza con los datos «headphones» del personaje (pet.js). */
+#phones { position: absolute; display: block; opacity: 0; translate: -50% 0; pointer-events: none; transform-origin: 50% 0; }
+#pet[data-music="on"] #phones { animation: phones-on 0.8s cubic-bezier(0.3, 1.4, 0.5, 1) forwards; }
+#pet[data-music="off"] #phones { animation: phones-off 0.45s ease-in forwards; }
+/* Disfrutando la música: cabecea despacio y suben notas. Solo en reposo (el resto de estados manda). */
+#pet[data-music="on"][data-state="idle"] #rig { animation: groove 1s ease-in-out 0.8s infinite; }
+#pet[data-music="on"]::before, #pet[data-music="on"] #rig::after {
+  position: absolute; z-index: 2; pointer-events: none; opacity: 0; color: var(--pet-accent, #ff8fb8);
+  font: 700 15px/1 "Segoe UI Symbol", "Segoe UI", sans-serif; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+#pet[data-music="on"]::before { content: "\266A"; right: 4px; top: 12px; animation: note 2.6s ease-out 1s infinite; }
+#pet[data-music="on"] #rig::after { content: "\266B"; left: 2px; top: 20px; animation: note 2.6s ease-out 2.3s infinite; }
 
 .bubble {
   position: absolute; top: 0; right: 0; display: none; z-index: 1;
@@ -26,13 +39,13 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #pet[data-state="surprised"] .bubble::before { content: "!"; color: #d33; }
 
 /* El sprite solo tiene la animación "standing"; las emociones se expresan moviendo y tiñendo ese sprite. */
-#pet[data-state="thinking"] #sprite { animation: tilt 2s ease-in-out infinite; }
-#pet[data-state="interacting"] #sprite { animation: tilt 0.6s ease-in-out 2; }
-#pet[data-state="working"] #sprite { animation: bob 0.5s ease-in-out infinite; }
-#pet[data-state="walking"] #sprite { animation: step 0.5s ease-in-out infinite; }
-#pet[data-state="happy"] #sprite { animation: tilt 0.4s ease-in-out infinite; }
+#pet[data-state="thinking"] #rig { animation: tilt 2s ease-in-out infinite; }
+#pet[data-state="interacting"] #rig { animation: tilt 0.6s ease-in-out 2; }
+#pet[data-state="working"] #rig { animation: bob 0.5s ease-in-out infinite; }
+#pet[data-state="walking"] #rig { animation: step 0.5s ease-in-out infinite; }
+#pet[data-state="happy"] #rig { animation: tilt 0.4s ease-in-out infinite; }
 /* Celebrar: saltitos y unas chispas que suben. */
-#pet[data-state="success"] #sprite { animation: hop 0.5s ease-out 2; }
+#pet[data-state="success"] #rig { animation: hop 0.5s ease-out 2; }
 #pet[data-state="happy"]::after, #pet[data-state="success"]::after {
   content: "\2728"; position: absolute; left: 4px; top: 6px; font-size: 14px; pointer-events: none;
   animation: sparkle 0.9s ease-out infinite;
@@ -40,7 +53,8 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #pet[data-state="success"]::after { left: auto; right: 4px; animation-delay: 0.2s; }
 #pet[data-state="surprised"] .bubble::before { display: inline-block; animation: pop 0.35s ease-out 2; }
 /* Dormida: respira despacio y suben las «z». */
-#pet[data-state="sleeping"] #sprite { filter: brightness(0.75) saturate(0.7); animation: breathe 3.6s ease-in-out infinite; }
+#pet[data-state="sleeping"] #sprite { filter: brightness(0.75) saturate(0.7); }
+#pet[data-state="sleeping"] #rig { animation: breathe 3.6s ease-in-out infinite; }
 #pet[data-state="sleeping"] .bubble::before { display: inline-block; animation: zzz 2.4s ease-in-out infinite; }
 /* Un halo que respira: azul al pensar, ámbar al trabajar. Va en #flip para no pisar el movimiento del sprite. */
 #pet[data-state="thinking"] #flip { animation: glow-think 1.6s ease-in-out infinite; }
@@ -50,7 +64,7 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #pet[data-state="alert"] .bubble::before { content: "\23F0"; display: inline-block; animation: ring 0.9s ease-in-out infinite; }
 #pet[data-state="alert"][data-alert-kind="battery"] .bubble::before { content: "\1F50B"; animation: ring 1.4s ease-in-out infinite; }
 #pet[data-state="alert"][data-alert-kind="rest"] .bubble::before { content: "\2615"; animation: zzz 2s ease-in-out infinite; }
-#pet[data-state="alert"] #sprite { animation: bob 0.3s ease-in-out infinite; }
+#pet[data-state="alert"] #rig { animation: bob 0.3s ease-in-out infinite; }
 #pet[data-state="alert"] #flip { animation: glow-alert 0.8s ease-in-out infinite; }
 #pet[data-state="surprised"] { animation: shake 0.4s ease-in-out 2; }
 #pet[data-state="success"] { animation: bounce 0.5s ease-out 2; }
@@ -89,4 +103,20 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
   30% { transform: translateY(-12px) scale(0.95, 1.06); }
   60% { transform: translateY(0) scale(1.06, 0.94); }
   100% { transform: translateY(0) scale(1, 1); }
+}
+@keyframes phones-on {
+  0% { opacity: 0; transform: translateY(-60%) rotate(-16deg) scale(1.15); }
+  50% { opacity: 1; transform: translateY(8%) rotate(4deg) scale(1); }
+  75% { transform: translateY(-3%) rotate(-1deg); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes phones-off {
+  0% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-55%) rotate(14deg) scale(1.1); }
+}
+@keyframes groove { 0%, 100% { transform: translateY(0) rotate(-2.5deg); } 50% { transform: translateY(-2px) rotate(2.5deg); } }
+@keyframes note {
+  0% { opacity: 0; transform: translate(0, 10px) rotate(-10deg) scale(0.7); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(6px, -22px) rotate(14deg) scale(1.1); }
 }

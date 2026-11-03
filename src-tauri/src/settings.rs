@@ -43,6 +43,8 @@ pub struct Settings {
     pub system_events: bool,
     /// Recordar cosas del usuario entre sesiones (ver `zen_desktop::memory`).
     pub memory_enabled: bool,
+    /// El personaje se pone auriculares y escucha cuando suena música en el equipo.
+    pub music_reaction: bool,
     /// La mascota comenta el uso del equipo: saludos, descansos, aburrimiento.
     pub usage_comments: bool,
     /// La IA puede escribir, pulsar teclas y pulsar controles en otras aplicaciones. Apagado por defecto.
@@ -73,6 +75,7 @@ impl Default for Settings {
             computer_control: false,
             memory_enabled: true,
             usage_comments: true,
+            music_reaction: true,
             disabled_apps: BTreeSet::new(),
             custom_apps: Vec::new(),
         }
@@ -162,6 +165,7 @@ impl Settings {
             computer_control: value["computer_control"].as_bool().unwrap_or(false),
             memory_enabled: value["memory_enabled"].as_bool().unwrap_or(true),
             usage_comments: value["usage_comments"].as_bool().unwrap_or(true),
+            music_reaction: value["music_reaction"].as_bool().unwrap_or(true),
             // Aquí solo se lee; `AppCatalog::configure` vuelve a comprobar cada entrada.
             disabled_apps: value["apps"]["disabled"].as_array().into_iter().flatten().filter_map(Value::as_str).take(64).map(str::to_string).collect(),
             custom_apps: value["apps"]["custom"]
@@ -194,6 +198,7 @@ impl Settings {
             "computer_control": self.computer_control,
             "memory_enabled": self.memory_enabled,
             "usage_comments": self.usage_comments,
+            "music_reaction": self.music_reaction,
             "apps": {
                 "disabled": self.disabled_apps,
                 "custom": self.custom_apps.iter().map(|app| json!({ "key": app.key, "name": app.name, "app_id": app.app_id })).collect::<Vec<_>>(),
@@ -326,6 +331,7 @@ mod tests {
         settings.computer_control = true;
         settings.memory_enabled = false;
         settings.usage_comments = false;
+        settings.music_reaction = false;
         settings.disabled_apps.insert("steam".into());
         settings.custom_apps.push(CustomApp { key: "docker_desktop".into(), name: "Docker Desktop".into(), app_id: "Docker.DockerForWindows".into() });
         settings.set_tool_enabled("open_application", false);
@@ -419,7 +425,7 @@ mod tests {
         assert_eq!(settings.character, crate::characters::default_id(), "un personaje inexistente vuelve al de por defecto");
         assert_eq!(settings.assistant_name, "Ryan", "un nombre inválido vuelve al de por defecto");
         assert!(settings.sound_enabled && settings.battery_alerts && settings.system_events);
-        assert!(settings.memory_enabled && settings.usage_comments, "por defecto la memoria y los comentarios están activos");
+        assert!(settings.memory_enabled && settings.usage_comments && settings.music_reaction, "por defecto la memoria, los comentarios y la música están activos");
         assert!(!settings.computer_control, "el control de otras aplicaciones nunca se activa por un dato raro");
         assert_eq!(settings.sound_volume, 100, "un volumen exagerado se limita");
         assert!(!settings.is_tool_enabled("open_application") && settings.is_tool_enabled("con espacio"));

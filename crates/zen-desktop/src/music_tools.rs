@@ -21,6 +21,8 @@ use crate::uia::{self, Control};
 const MAX_QUERY_CHARS: usize = 100;
 /// Se miran solo las primeras canciones de los resultados: Spotify ya los ordena por relevancia.
 const CANDIDATES: usize = 6;
+/// Enlaces como máximo que se leen antes del botón verde (título + artistas de la tarjeta del primer resultado).
+const MAX_TOP_LINKS: usize = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Service {
@@ -84,6 +86,31 @@ pub fn parse_spotify_tracks(controls: &[Control]) -> Vec<Track> {
         }
     }
     tracks
+}
+
+/// El primer resultado de la búsqueda (la tarjeta grande con el botón verde). Windows la ve como los enlaces del
+/// título y de los artistas seguidos de un botón «Reproducir» SIN título; el botón del reproductor de abajo se
+/// parece, pero va tras otros botones y no tras enlaces. Puede ser una canción, un artista, un álbum o una lista:
+/// Spotify elige lo que más se parece a lo buscado, y es lo que el usuario espera que suene.
+pub fn parse_top_result(controls: &[Control]) -> Option<Track> {
+    for (index, control) in controls.iter().enumerate() {
+        let bare_play = control.kind == "botón" && SPOTIFY_TEXTS.iter().any(|(play, _)| control.name.trim() == play.trim());
+        if !bare_play {
+            continue;
+        }
+        // Los enlaces pegados justo antes del botón, en el orden en que aparecen: primero el título y luego los artistas.
+        let mut links: Vec<&Control> = controls[..index].iter().rev().take(MAX_TOP_LINKS).take_while(|c| c.kind == "enlace").collect();
+        links.reverse();
+        let Some((title, artists)) = links.split_first() else { continue };
+        let occurrence = controls[..index].iter().filter(|c| c.kind == "botón" && c.name == control.name).count();
+        return Some(Track {
+            title: title.name.clone(),
+            artists: artists.iter().map(|c| c.name.clone()).collect(),
+            play_name: control.name.clone(),
+            occurrence,
+        });
+    }
+    None
 }
 
 fn normalize(text: &str) -> String {
@@ -274,8 +301,56 @@ fn spotify_window() -> Option<input::WindowInfo> {
     input::visible_windows().into_iter().find(|w| w.process == "spotify")
 }
 
-fn spotify_tracks(hwnd: isize) -> Vec<Track> {
-    uia::scan_controls(hwnd).map(|controls| parse_spotify_tracks(&controls)).unwrap_or_default()
+/// Lo que Spotify muestra en una búsqueda: la tarjeta del primer resultado y las filas de canciones de debajo.
+struct SearchPage {
+    top: Option<Track>,
+    rows: Vec<Track>,
+}
+
+impl SearchPage {
+    fn read(hwnd: isize) -> Self {
+        let controls = uia::scan_controls(hwnd).unwrap_or_default();
+        Self { top: parse_top_result(&controls), rows: parse_spotify_tracks(&controls) }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.top.is_none() && self.rows.is_empty()
+    }
+
+    /// Para saber si la página cambió respecto a la búsqueda anterior.
+    fn titles(&self) -> Vec<String> {
+        self.top.iter().map(|t| format!("★{}", t.title)).chain(self.rows.iter().map(|t| t.title.clone())).collect()
+    }
+}
+
+/// Título de lo que suena ahora en Spotify (vacío si no suena nada suyo).
+fn spotify_playing_title() -> String {
+    let sessions = media_session::all_playing().unwrap_or_default();
+    sessions.into_iter().find(|s| s.app.to_lowercase().contains("spotify") && s.state == PlayState::Playing).map(|s| s.title).unwrap_or_default()
+}
+
+/// Espera a que Spotify suene algo nuevo. Un primer resultado que es un artista, un álbum o una lista no se llama
+/// como la pista que arranca, así que basta con que suene algo distinto a lo de antes (o el título esperado).
+fn confirm_spotify(expected_title: &str, previous_title: &str, timeout: Duration) -> bool {
+    let started = Instant::now();
+    let mut pressed_play = false;
+    let is_new = |title: &str| previous_title.is_empty() || normalize(title) != normalize(previous_title) || same_title(title, expected_title);
+    while started.elapsed() < timeout {
+        if let Ok(sessions) = media_session::all_playing() {
+            for session in sessions.iter().filter(|s| s.app.to_lowercase().contains("spotify") && is_new(&s.title)) {
+                if session.state == PlayState::Playing {
+                    return true;
+                }
+                if !pressed_play && started.elapsed() > Duration::from_secs(3) && session.can_play_pause {
+                    pressed_play = true;
+                    let title = session.title.clone();
+                    let _ = media_session::control_matching(&|t| normalize(t) == normalize(&title), MediaButton::PlayPause);
+                }
+            }
+        }
+        sleep(Duration::from_millis(500));
+    }
+    false
 }
 
 fn play_on_spotify(query: &str) -> Result<ToolOutput, ToolError> {
@@ -283,7 +358,7 @@ fn play_on_spotify(query: &str) -> Result<ToolOutput, ToolError> {
         return Err(ToolError::Failed("Spotify no está instalado en este equipo. Prueba con youtube_music.".into()));
     }
     // Lo que había antes en pantalla: sirve para no pulsar resultados viejos mientras carga la búsqueda nueva.
-    let before: Vec<String> = spotify_window().map(|w| spotify_tracks(w.hwnd)).unwrap_or_default().into_iter().map(|t| t.title).collect();
+    let before: Vec<String> = spotify_window().map(|w| SearchPage::read(w.hwnd).titles()).unwrap_or_default();
 
     let target = format!("spotify:search:{}", crate::web_tools::percent_encode(query));
     crate::web_tools::open_with_shell(&target).map_err(|error| ToolError::Failed(format!("no pude abrir Spotify: {error}")))?;
@@ -299,27 +374,31 @@ fn play_on_spotify(query: &str) -> Result<ToolOutput, ToolError> {
     }
     let window = window.ok_or_else(|| ToolError::Failed("Spotify no llegó a abrirse a tiempo.".into()))?;
 
-    // Esperar a que aparezcan las canciones de la búsqueda nueva.
+    // Esperar a que aparezca el resultado de la búsqueda nueva.
     let wait_from = Instant::now();
-    let mut tracks = Vec::new();
+    let mut page = SearchPage { top: None, rows: Vec::new() };
     while wait_from.elapsed() < Duration::from_secs(40) {
         sleep(Duration::from_millis(800));
-        let found = spotify_tracks(window.hwnd);
-        let titles: Vec<&String> = found.iter().map(|t| &t.title).collect();
-        let changed = titles.iter().map(|t| t.as_str()).ne(before.iter().map(String::as_str));
+        let found = SearchPage::read(window.hwnd);
+        let changed = found.titles() != before;
         if !found.is_empty() && (changed || wait_from.elapsed() > Duration::from_secs(8)) {
-            tracks = found;
+            page = found;
             break;
         }
     }
-    let track = pick_track(query, &tracks)
-        .ok_or_else(|| ToolError::Failed(format!("No encontré canciones para «{query}» en Spotify (¿hay sesión iniciada?).")))?
-        .clone();
+    // Se reproduce el primer resultado (la tarjeta con el botón verde), que es lo que Spotify considera lo que
+    // más se parece a lo pedido. Solo si no se encuentra esa tarjeta se elige entre las filas de canciones.
+    let track = page
+        .top
+        .clone()
+        .or_else(|| pick_track(query, &page.rows).cloned())
+        .ok_or_else(|| ToolError::Failed(format!("No encontré resultados para «{query}» en Spotify (¿hay sesión iniciada?).")))?;
 
+    let previous = spotify_playing_title();
     uia::activate_nth(window.hwnd, &track.play_name, track.occurrence).map_err(ToolError::Failed)?;
     let artist = track.artists.first().cloned().unwrap_or_default();
     let label = if artist.is_empty() { track.title.clone() } else { format!("{} de {artist}", track.title) };
-    let confirmed = confirm_playing(&track.title, Duration::from_secs(10));
+    let confirmed = confirm_spotify(&track.title, &previous, Duration::from_secs(10));
     let summary = if confirmed {
         format!("Reproduciendo «{label}» en Spotify")
     } else {
@@ -442,6 +521,54 @@ mod tests {
         ]
     }
 
+    /// Búsqueda «Arctic Monkeys» tal como la ve Windows: tarjeta del primer resultado (artista) y luego el resto.
+    fn spotify_top_artist() -> Vec<Control> {
+        vec![
+            c("botón", "Anterior"), c("botón", "Pausar"), c("botón", "Siguiente"), // el reproductor de abajo
+            c("casilla", "Audiolibros"),
+            c("enlace", "Arctic Monkeys"),
+            c("botón", "Reproducir"), // el botón verde del primer resultado
+            c("botón", "Pop Up De Spotify"),
+            c("botón", "Reproducir Pop Up"),
+            c("enlace", "Pop Up"),
+        ]
+    }
+
+    #[test]
+    fn el_primer_resultado_es_la_tarjeta_del_boton_verde() {
+        let top = parse_top_result(&spotify_top_artist()).expect("debe ver el primer resultado");
+        assert_eq!(top.title, "Arctic Monkeys");
+        assert!(top.artists.is_empty());
+        assert_eq!(top.play_name, "Reproducir");
+        assert_eq!(top.occurrence, 0);
+    }
+
+    #[test]
+    fn una_cancion_como_primer_resultado_trae_titulo_y_artistas_en_orden() {
+        let controls = vec![
+            c("botón", "Anterior"), c("botón", "Reproducir"), c("botón", "Siguiente"), // reproductor en pausa: botón sin título
+            c("casilla", "Perfiles"),
+            c("enlace", "Diles"), c("enlace", "Bad Bunny"), c("enlace", "Ozuna"), c("enlace", "Farruko"),
+            c("botón", "Reproducir"),
+            c("botón", "Reproducir Un Ratito Mas"), c("enlace", "Un Ratito Mas"), c("botón", "Más opciones para Un Ratito Mas"),
+        ];
+        let top = parse_top_result(&controls).unwrap();
+        assert_eq!(top.title, "Diles");
+        assert_eq!(top.artists, ["Bad Bunny", "Ozuna", "Farruko"]);
+        assert_eq!(top.occurrence, 1, "es el segundo botón «Reproducir» sin título: el primero es el del reproductor");
+    }
+
+    #[test]
+    fn el_boton_del_reproductor_y_las_filas_no_son_el_primer_resultado() {
+        // Sin tarjeta de primer resultado: solo el reproductor (sin enlaces delante) y filas con título.
+        let controls = vec![c("botón", "Anterior"), c("botón", "Reproducir"), c("botón", "Siguiente")];
+        assert!(parse_top_result(&controls).is_none());
+        assert!(parse_top_result(&spotify_results()).is_none(), "el «Reproducir» suelto de la página no va tras enlaces");
+        assert!(parse_top_result(&[]).is_none());
+        let english = vec![c("enlace", "Home"), c("enlace", "Band"), c("botón", "Play")];
+        assert_eq!(parse_top_result(&english).unwrap().title, "Home");
+    }
+
     #[test]
     fn reconoce_las_filas_de_canciones_y_descarta_playlists() {
         let tracks = parse_spotify_tracks(&spotify_results());
@@ -539,6 +666,20 @@ mod tests {
             assert!(parse(&bad).is_err(), "{bad}");
         }
         assert_eq!(PlayMusic.risk(&json!({})), RiskLevel::Safe);
+    }
+
+    /// Diagnóstico: imprime los controles que Windows ve en la ventana de Spotify (solo lee, no pulsa nada).
+    /// `cargo test -p zen-desktop -- --ignored --nocapture volcar_controles_de_spotify`
+    #[test]
+    #[ignore = "necesita Spotify abierto"]
+    fn volcar_controles_de_spotify() {
+        let window = spotify_window().expect("abre Spotify");
+        let controls = uia::scan_controls(window.hwnd).expect("no se pudo leer la ventana");
+        for (index, control) in controls.iter().enumerate() {
+            println!("{index:3} {:8} {}", control.kind, control.name);
+        }
+        println!("PRIMER RESULTADO: {:?}", parse_top_result(&controls));
+        println!("FILAS: {:?}", parse_spotify_tracks(&controls).iter().map(|t| t.title.as_str()).collect::<Vec<_>>());
     }
 
     /// Prueba real: pone música de verdad. `cargo test -p zen-desktop -- --ignored --nocapture reproduce_de_verdad`

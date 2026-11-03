@@ -5,7 +5,7 @@ const { listen } = window.__TAURI__.event;
 
 // Milisegundos por frame: más rápido cuando trabaja, más lento cuando duerme.
 // Cada personaje los multiplica por su propia «speed» del manifiesto.
-const FRAME_MS = { idle: 110, walking: 90, thinking: 130, working: 70, success: 80, happy: 70, surprised: 90, interacting: 80, alert: 70, sleeping: 260 };
+const FRAME_MS = { idle: 110, walking: 90, thinking: 130, working: 70, success: 80, happy: 70, surprised: 90, interacting: 80, alert: 70, sleeping: 260, listening: 190 };
 
 // Los personajes se describen en assets/characters.json (se copia a ui/assets al compilar).
 let manifest = null;
@@ -18,6 +18,9 @@ let frame = 0;
 let frameTimer = null;
 let currentState = "idle";
 let loadToken = 0;
+// Suena música en el equipo: en reposo usa la animación «listening» (si el personaje la tiene) y lleva auriculares.
+let music = false;
+const phones = document.getElementById("phones");
 
 function frameUrl(entry, n) {
   const name = entry.pattern.replace("{nn}", String(n).padStart(2, "0")).replace("{n}", String(n));
@@ -28,18 +31,46 @@ function playAnimation(state) {
   currentState = state;
   clearInterval(frameTimer);
   if (!character) return;
-  const own = stateSets[state];
+  const key = state === "idle" && music && stateSets.listening ? "listening" : state;
+  const own = stateSets[key];
   const next = own?.length ? own : baseFrames;
   if (next !== frames) {
     frames = next;
     frame = 0;
     sprite.src = frames[0].src;
   }
-  const ms = (FRAME_MS[state] ?? FRAME_MS.idle) * (character.speed ?? 1);
+  const ms = (FRAME_MS[key] ?? FRAME_MS.idle) * (character.speed ?? 1);
   frameTimer = setInterval(() => {
     frame = (frame + 1) % frames.length;
     sprite.src = frames[frame].src;
   }, ms);
+}
+
+// Los auriculares se colocan con «headphones» del manifiesto: centro (x, y) de los auriculares y ancho, en % del
+// sprite. Un personaje sin ese dato no se pone auriculares (solo cabecea y suenan las notas).
+function placePhones(entry) {
+  const spec = entry.headphones;
+  document.documentElement.style.setProperty("--pet-accent", entry.accent ?? "#ff8fb8");
+  if (!spec) {
+    phones.removeAttribute("src");
+    phones.style.display = "none";
+    return;
+  }
+  const height = (spec.width * 24) / 32; // los sprites de auriculares miden 32x24
+  phones.src = `assets/headphones/${entry.id}.png`;
+  phones.style.left = `${spec.x}%`;
+  phones.style.top = `${spec.y - height * (15.5 / 24)}%`; // (x, y) es el centro de los auriculares, no su borde
+  phones.style.width = `${spec.width}%`;
+  phones.style.display = "";
+}
+
+function setMusic(playing) {
+  playing = Boolean(playing);
+  if (playing === music) return;
+  music = playing;
+  // «on» los hace caer sobre la cabeza; «off» los quita. Sin dato previo no se anima nada.
+  pet.dataset.music = playing ? "on" : "off";
+  playAnimation(currentState);
 }
 
 async function useCharacter(id) {
@@ -69,6 +100,7 @@ async function useCharacter(id) {
   }
 
   character = entry;
+  placePhones(entry);
   baseFrames = images;
   stateSets = sets;
   frames = images;
@@ -82,6 +114,9 @@ invoke("get_character")
   .then(useCharacter)
   .catch(() => useCharacter(null));
 listen("character-changed", (e) => useCharacter(e.payload));
+listen("pet-music", (e) => setMusic(e.payload));
+// La ventana puede abrirse con la música ya sonando.
+invoke("is_music_playing").then(setMusic).catch(() => {});
 
 const appWindow = window.__TAURI__.window.getCurrentWindow();
 const DRAG_THRESHOLD = 4;
