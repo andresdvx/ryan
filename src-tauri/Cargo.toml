@@ -1,0 +1,20 @@
+[package]
+name = "ryan"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-global-shortcut = "2"
+zen-core = { path = "../crates/zen-core" }
+zen-desktop = { path = "../crates/zen-desktop" }
+zen-character = { path = "../crates/zen-character" }
+serde_json = "1.0.154"
+zen-ai = { version = "0.1.0", path = "../crates/zen-ai" }
+keyring = { version = "3", features = ["windows-native"] }
+dirs = "7.0.0"
+tauri-plugin-autostart = "2.7.0"
+tauri-plugin-single-instance = "2.5.5"

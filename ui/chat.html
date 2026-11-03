@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Ryan - Chat</title>
+  <link rel="stylesheet" href="chat.css">
+</head>
+<body>
+  <header data-tauri-drag-region>
+    <div class="badge" data-tauri-drag-region><img id="header-avatar" alt="" hidden></div>
+    <div class="identity" data-tauri-drag-region>
+      <span id="assistant-title" class="title" data-tauri-drag-region>Ryan</span>
+      <span id="status" class="status" data-tauri-drag-region>Listo</span>
+    </div>
+    <button id="close" title="Cerrar (Esc)" aria-label="Cerrar">&times;</button>
+  </header>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" role="tab" data-tab="chat" aria-selected="true">Chat</button>
+    <button class="tab" role="tab" data-tab="settings" aria-selected="false">Ajustes</button>
+  </nav>
+
+  <div id="view-chat" class="view">
+    <main id="history"></main>
+    <section id="player" class="player no-art" aria-label="Reproductor" hidden>
+      <img id="player-art" class="art" alt="" hidden>
+      <div class="info">
+        <div id="player-title" class="track"></div>
+        <div id="player-sub" class="sub"></div>
+        <div class="progress">
+          <span id="player-elapsed" class="time">0:00</span>
+          <div id="player-bar" class="bar"><div id="player-fill" class="fill"></div></div>
+          <span id="player-total" class="time"></span>
+        </div>
+      </div>
+      <div class="controls">
+        <button type="button" id="player-prev" title="Anterior" aria-label="Anterior"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+        <button type="button" id="player-toggle" class="main" title="Reproducir" aria-label="Reproducir"></button>
+        <button type="button" id="player-next" title="Siguiente" aria-label="Siguiente"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18l8.5-6L6 6zM16 6v12h2V6z"/></svg></button>
+      </div>
+    </section>
+    <form id="form" autocomplete="off">
+      <input id="input" type="text" placeholder="Escribe una solicitud..." autofocus>
+      <button type="submit" id="send" aria-label="Enviar" title="Enviar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12.6 2-12.6 2z"/></svg></button>
+    </form>
+  </div>
+
+  <section id="view-settings" class="view" hidden>
+    <nav class="subtabs" role="tablist" aria-label="Secciones de ajustes">
+      <button type="button" class="subtab active" role="tab" data-panel="pet" aria-selected="true"><span aria-hidden="true">🐾</span> Mascota</button>
+      <button type="button" class="subtab" role="tab" data-panel="ai" aria-selected="false"><span aria-hidden="true">✨</span> IA</button>
+      <button type="button" class="subtab" role="tab" data-panel="alerts" aria-selected="false"><span aria-hidden="true">🔔</span> Avisos</button>
+      <button type="button" class="subtab" role="tab" data-panel="system" aria-selected="false"><span aria-hidden="true">⚙️</span> Sistema</button>
+      <button type="button" class="subtab" role="tab" data-panel="security" aria-selected="false"><span aria-hidden="true">🛡️</span> Seguridad</button>
+    </nav>
+
+    <div class="panels">
+      <!-- Mascota -->
+      <div class="panel" data-panel="pet">
+        <form id="name-form" class="card field" autocomplete="off">
+          <h3>Nombre</h3>
+          <div class="row">
+            <input id="assistant-name" type="text" maxlength="30" spellcheck="false" placeholder="Ryan" aria-label="Nombre del asistente">
+            <button type="submit" id="save-name">Guardar</button>
+          </div>
+          <div id="name-message" class="message" role="status"></div>
+          <p class="hint">La IA sabrá que se llama así y responderá a ese nombre.</p>
+        </form>
+
+        <div class="card field">
+          <h3 id="avatar-label">Avatar</h3>
+          <div id="avatars" class="avatars" role="radiogroup" aria-labelledby="avatar-label"></div>
+          <div id="avatar-message" class="message" role="status"></div>
+        </div>
+
+        <div class="card field">
+          <h3>Comportamiento</h3>
+          <label class="switch"><input type="checkbox" id="behavior-wander"><span class="track"></span><span class="text">Pasear por el escritorio de vez en cuando</span></label>
+          <label class="switch"><input type="checkbox" id="behavior-look"><span class="track"></span><span class="text">Mirar hacia el cursor cuando está cerca</span></label>
+          <label class="switch"><input type="checkbox" id="usage-comments"><span class="track"></span><span class="text">Comentar cómo uso el equipo (descansos, bienvenida, aburrimiento)</span></label>
+          <div id="behavior-message" class="message" role="status"></div>
+        </div>
+
+        <div class="card field">
+          <h3>Memoria</h3>
+          <label class="switch"><input type="checkbox" id="memory-enabled"><span class="track"></span><span class="text">Recordar lo que le cuente entre conversaciones</span></label>
+          <details id="memory-details" class="apps">
+            <summary>Lo que recuerda de mí</summary>
+            <div class="field apps-body">
+              <p class="hint">Se guarda solo en este equipo. Para que recuerde algo, díselo en el chat ("recuerda que me llamo Ana"); cada recuerdo nuevo te pide confirmación.</p>
+              <div id="memory-list" class="tools"></div>
+              <div class="row"><button type="button" id="memory-clear" class="secondary">Borrar todo</button></div>
+            </div>
+          </details>
+          <div id="memory-message" class="message" role="status"></div>
+        </div>
+      </div>
+
+      <!-- Inteligencia artificial -->
+      <div class="panel" data-panel="ai" hidden>
+        <div class="card field">
+          <h3>Proveedor</h3>
+          <select id="provider" aria-label="Proveedor de IA"></select>
+        </div>
+
+        <form id="model-form" class="card field" autocomplete="off">
+          <h3>Modelo</h3>
+          <div class="row">
+            <input id="model" type="text" spellcheck="false" aria-label="Modelo" list="model-options">
+            <datalist id="model-options"></datalist>
+            <button type="submit" id="save-model">Guardar</button>
+          </div>
+          <div id="model-message" class="message" role="status"></div>
+          <p id="model-hint" class="hint"></p>
+        </form>
+
+        <form id="ollama-form" class="card field" autocomplete="off" hidden>
+          <h3>Servidor de Ollama</h3>
+          <div class="row">
+            <input id="ollama-url" type="text" spellcheck="false" aria-label="Dirección de Ollama" placeholder="http://localhost:11434">
+            <button type="submit" id="save-ollama">Guardar</button>
+          </div>
+          <div class="row">
+            <button type="button" id="detect-models" class="secondary">Probar y buscar modelos</button>
+          </div>
+          <div id="ollama-message" class="message" role="status"></div>
+          <p class="hint">Corre en tu equipo y no necesita API key. Descarga un modelo con <code>ollama pull qwen3:8b</code>. Para que pueda usar herramientas, el modelo debe admitirlas (Qwen3, Llama 3.1; DeepSeek-R1 en su versión base no). No tiene búsqueda web integrada.</p>
+        </form>
+
+        <form id="key-form" class="card field" autocomplete="off">
+          <h3 id="key-label">API key</h3>
+          <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="Pega tu API key" aria-labelledby="key-label">
+          <div id="key-status" class="hint"></div>
+          <div class="row">
+            <button type="submit" id="save-key">Guardar</button>
+            <button type="button" id="delete-key" class="secondary">Borrar clave</button>
+          </div>
+          <div id="key-message" class="message" role="status"></div>
+          <p id="key-hint" class="hint"></p>
+        </form>
+      </div>
+
+      <!-- Avisos -->
+      <div class="panel" data-panel="alerts" hidden>
+        <div class="card field">
+          <h3>Sonido</h3>
+          <label class="switch"><input type="checkbox" id="sound-enabled"><span class="track"></span><span class="text">Sonidos de aviso (recordatorios, errores, tareas hechas)</span></label>
+          <label for="sound-volume" class="sub">Volumen <span id="sound-volume-value" class="hint"></span></label>
+          <div class="row">
+            <input id="sound-volume" type="range" min="0" max="100" step="5">
+            <button type="button" id="test-sound" class="secondary">Probar</button>
+          </div>
+        </div>
+        <div class="card field">
+          <h3>Batería</h3>
+          <label class="switch"><input type="checkbox" id="battery-alerts"><span class="track"></span><span class="text">Avisar cuando esté baja o termine de cargar</span></label>
+          <div id="sound-message" class="message" role="status"></div>
+        </div>
+      </div>
+
+      <!-- Sistema -->
+      <div class="panel" data-panel="system" hidden>
+        <form id="shortcut-form" class="card field" autocomplete="off">
+          <h3>Atajo para abrir el chat</h3>
+          <div class="mods">
+            <label class="chip"><input type="checkbox" data-mod="Ctrl"><span>Ctrl</span></label>
+            <label class="chip"><input type="checkbox" data-mod="Alt"><span>Alt</span></label>
+            <label class="chip"><input type="checkbox" data-mod="Shift"><span>Shift</span></label>
+            <label class="chip"><input type="checkbox" data-mod="Super"><span>Win</span></label>
+          </div>
+          <div class="row">
+            <input id="shortcut-key" type="text" maxlength="3" spellcheck="false" aria-label="Tecla" placeholder="K">
+            <button type="submit" id="save-shortcut">Guardar</button>
+          </div>
+          <div id="shortcut-message" class="message" role="status"></div>
+          <p id="shortcut-hint" class="hint"></p>
+        </form>
+
+        <div class="card field">
+          <h3>Inicio</h3>
+          <label class="switch"><input type="checkbox" id="autostart"><span class="track"></span><span class="text">Iniciar Ryan con Windows</span></label>
+          <div id="autostart-message" class="message" role="status"></div>
+        </div>
+
+        <div class="card field">
+          <h3>Aplicaciones</h3>
+          <details id="apps-details" class="apps">
+            <summary>Aplicaciones que la IA puede abrir</summary>
+            <div class="field apps-body">
+              <p class="hint">Marca las que quieras que pueda abrir. Cualquier otra, nunca.</p>
+              <div id="apps-loading" class="hint" hidden>Leyendo el menú Inicio…</div>
+              <div id="apps-builtin" class="tools"></div>
+              <label for="apps-filter" class="sub">Otras aplicaciones de tu menú Inicio</label>
+              <div class="row">
+                <input id="apps-filter" type="search" placeholder="Filtrar por nombre…" spellcheck="false" autocomplete="off">
+                <button type="button" id="apps-refresh" class="secondary">Actualizar</button>
+              </div>
+              <div id="apps-list" class="tools scroll"></div>
+              <p id="apps-hint" class="hint"></p>
+              <div id="apps-message" class="message" role="status"></div>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <!-- Seguridad -->
+      <div class="panel" data-panel="security" hidden>
+        <div class="card field">
+          <h3>Confirmaciones</h3>
+          <label class="switch"><input type="checkbox" id="confirm-all"><span class="track"></span><span class="text">Pedir confirmación en todas las acciones</span></label>
+          <p class="hint">Las acciones de riesgo siempre piden confirmación, con o sin esta opción.</p>
+        </div>
+
+        <div class="card field">
+          <h3>Control de otras aplicaciones</h3>
+          <p class="hint">Permite que la IA escriba, pulse teclas y pulse botones en otras ventanas. Está <strong id="cc-state">desactivado</strong>.</p>
+          <div class="row"><button type="button" id="cc-toggle" class="secondary">Activar…</button></div>
+          <div id="cc-warning" class="warning" hidden>
+            <p><strong>Antes de activarlo, ten en cuenta:</strong></p>
+            <ul>
+              <li>Cada acción te pide confirmación y te muestra la ventana exacta y el texto o la tecla.</li>
+              <li>Nunca actúa sobre terminales, administradores del sistema ni ventanas de contraseñas, pagos o permisos de administrador.</li>
+              <li>Hasta 20 acciones por minuto. Aun así, una acción confirmada por error puede enviar un mensaje o cambiar un documento: lee bien antes de confirmar.</li>
+            </ul>
+            <div class="row">
+              <button type="button" id="cc-confirm">Entiendo los riesgos, activar</button>
+              <button type="button" id="cc-cancel" class="secondary">Cancelar</button>
+            </div>
+          </div>
+          <div id="cc-message" class="message" role="status"></div>
+        </div>
+
+        <div class="card field">
+          <h3>Herramientas de la IA</h3>
+          <div id="tools-list" class="tools"></div>
+          <div id="tools-message" class="message" role="status"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script src="richtext.js"></script>
+  <script src="chat.js"></script>
+  <script src="player.js"></script>
+</body>
+</html>

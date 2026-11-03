@@ -1,0 +1,33 @@
+{
+  "_states": "Opcional: dentro de un personaje, \"states\": { \"sleeping\": { \"folder\": \"...\", \"pattern\": \"x_{nn}.png\", \"frames\": 6 } } da una animación propia a ese estado (idle, walking, thinking, working, success, happy, surprised, interacting, alert, sleeping). Sin ella se usa la de reposo.",
+  "default": "zen",
+  "characters": [
+    {
+      "id": "zen",
+      "name": "Zen",
+      "folder": "character/standing",
+      "pattern": "character-{n}.png",
+      "frames": 13,
+      "preview_frame": 1,
+      "speed": 1.0
+    },
+    {
+      "id": "poring",
+      "name": "Poring",
+      "folder": "poring/standing",
+      "pattern": "sprite_{nn}.png",
+      "frames": 8,
+      "preview_frame": 4,
+      "speed": 1.4
+    },
+    {
+      "id": "fairy",
+      "name": "Fairy",
+      "folder": "fairy",
+      "pattern": "sprite_{nn}.png",
+      "frames": 8,
+      "preview_frame": 1,
+      "speed": 0.8
+    }
+  ]
+}

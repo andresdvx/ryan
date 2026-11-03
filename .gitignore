@@ -1,0 +1,36 @@
+# --- Rust / Cargo ---
+/target/
+**/*.rs.bk
+
+# Configuración local de Cargo (por ejemplo, una carpeta de compilación personal fuera del proyecto)
+/.cargo/
+
+# --- Generado al compilar (no se sube) ---
+# src-tauri/build.rs copia assets/ aquí; la fuente de verdad es assets/
+/ui/assets/
+# Esquemas que genera Tauri
+/src-tauri/gen/
+
+# --- Secretos: nunca deben subirse ---
+# (las API keys de Ryan viven en el Administrador de credenciales de Windows, no en archivos)
+.env
+.env.*
+*.pem
+*.pfx
+settings.json
+settings.backup.json
+
+# --- Copias, temporales y registros ---
+*.bak
+*.tmp
+*.log
+*.orig
+
+# --- Editores y sistema ---
+.vscode/
+.idea/
+.vs/
+.claude/
+Thumbs.db
+desktop.ini
+.DS_Store

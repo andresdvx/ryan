@@ -1,0 +1,286 @@
+# Ryan 🐾
+
+Un asistente personal con IA que vive en tu escritorio de Windows como una mascota animada. Haz clic en ella (o pulsa un atajo), abre el chat y pídele cosas: abrir programas, poner música, ordenar tus archivos, recordarte algo, buscar en internet o incluso mirar una ventana y explicarte qué muestra.
+
+Está escrito en **Rust** con **Tauri 2**, y puede usar **Gemini, Claude, OpenAI** o **modelos locales con Ollama** (sin API key).
+
+<p align="center">
+  <img src="docs/images/chat.png" alt="Chat de Ryan reproduciendo música en Spotify" width="420">
+</p>
+
+> Las capturas de este README usan datos de ejemplo.
+
+## Índice
+
+- [Capturas](#capturas)
+- [Qué puede hacer](#qué-puede-hacer)
+- [Seguridad](#seguridad)
+- [Requisitos](#requisitos)
+- [Descarga](#descarga)
+- [Configuración](#configuración)
+- [Ejecución](#ejecución)
+- [Uso](#uso)
+- [Modelos locales con Ollama](#modelos-locales-con-ollama)
+- [Dónde se guardan tus datos](#dónde-se-guardan-tus-datos)
+- [Personalizar](#personalizar)
+- [Estructura del proyecto](#estructura-del-proyecto)
+- [Desarrollo](#desarrollo)
+- [Problemas frecuentes](#problemas-frecuentes)
+
+## Capturas
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/confirm.png" alt="Confirmación antes de borrar una carpeta" width="300"><br><sub>Las acciones de riesgo piden confirmación detallada</sub></td>
+    <td align="center"><img src="docs/images/ai.png" alt="Ajustes de IA con Ollama" width="300"><br><sub>Elige proveedor de IA, incluido un modelo local</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/pet.png" alt="Ajustes de la mascota" width="300"><br><sub>Nombre, avatar, comportamiento y memoria</sub></td>
+    <td align="center"><img src="docs/images/security.png" alt="Ajustes de seguridad" width="300"><br><sub>Tú decides qué herramientas puede usar la IA</sub></td>
+  </tr>
+</table>
+
+### Personajes
+
+Trae tres personajes; puedes [añadir los tuyos](#añadir-un-personaje).
+
+<table>
+  <tr>
+    <td align="center"><img src="assets/character/standing/character-1.png" alt="Zen" height="96"><br>Zen</td>
+    <td align="center"><img src="assets/poring/standing/sprite_04.png" alt="Poring" height="96"><br>Poring</td>
+    <td align="center"><img src="assets/fairy/sprite_01.png" alt="Fairy" height="96"><br>Fairy</td>
+  </tr>
+</table>
+
+## Qué puede hacer
+
+| Área | Ejemplos |
+| --- | --- |
+| **Mascota** | Se anima según lo que hace (reposo, pensando, trabajando, contenta…), pasea por el escritorio, mira hacia el cursor, avisa con la batería baja y sugiere descansos. |
+| **Archivos** | Crear, leer, buscar, mover, renombrar y **borrar enviando a la Papelera de Windows** (recuperable, nunca permanente). Organizar una carpeta por tipos y deshacerlo. Solo en Escritorio, Documentos y Descargas. |
+| **Programas y web** | Abrir las aplicaciones que tú permitas, abrir sitios web, buscar en internet con la búsqueda integrada de Gemini, Claude u OpenAI. |
+| **Música y vídeo** | Reproducir una canción en la **app de escritorio de Spotify**, en YouTube Music o en YouTube. Reproductor en el chat con pausa, anterior y siguiente para lo que suene en Windows. |
+| **Sistema** | Información del equipo (batería, memoria…), brillo, portapapeles, recordatorios con aviso sonoro. |
+| **Memoria** | Recuerda lo que le pidas ("recuerda que me llamo Ana") entre sesiones. Nunca guarda contraseñas, claves ni datos de tarjetas. |
+| **Ver la pantalla** | Con un modelo con visión (de momento, en Ollama) puede mirar **una ventana** y explicar lo que muestra, por ejemplo un mensaje de error. |
+| **Control de otras apps** *(apagado por defecto)* | Escribir, pulsar teclas y pulsar botones en otras ventanas, con confirmación en cada acción. |
+
+## Seguridad
+
+La IA **no tiene terminal ni ejecuta comandos**: solo puede usar herramientas concretas, y todas pasan por el mismo camino: validación → permisos → confirmación → ejecución.
+
+- **Tres niveles de riesgo.** Las acciones seguras se ejecutan solas; las delicadas piden confirmación; las peligrosas (borrar, escribir en otra app, mirar una ventana…) piden una confirmación detallada que te dice exactamente qué va a pasar.
+- **Control de otras aplicaciones, apagado por defecto.** Se activa en *Ajustes > Seguridad*. Nunca actúa sobre terminales, administradores del sistema ni ventanas de contraseñas o pagos, y tiene un límite de 20 acciones por minuto.
+- **Solo tus carpetas.** Las herramientas de archivos están limitadas a Escritorio, Documentos y Descargas, y no siguen enlaces que salgan de ellas.
+- **Desactiva lo que no quieras.** Cada herramienta se puede apagar en *Ajustes > Seguridad*.
+- **Tus claves están a salvo.** Las API keys se guardan en el Administrador de credenciales de Windows, nunca en un archivo del proyecto.
+- **Lo que lee la IA son datos, no órdenes.** Los nombres de archivos, páginas web y resultados de herramientas no pueden darle instrucciones.
+
+## Requisitos
+
+- **Windows 10 u 11 de 64 bits.** Solo funciona en Windows.
+- **[Rust](https://rustup.rs)** (instálalo con `rustup`; el proyecto se probó con Rust 1.99).
+- **Herramientas de compilación de C++ de Visual Studio:** instala las [Build Tools](https://visualstudio.microsoft.com/es/visual-cpp-build-tools/) y marca la carga de trabajo *Desarrollo para el escritorio con C++*.
+- **WebView2 Runtime.** Ya viene con Windows 11 y con casi todos los Windows 10; si no, [descárgalo](https://developer.microsoft.com/microsoft-edge/webview2/).
+- **Git** (opcional, para clonar el repositorio).
+- **Una IA:** una API key de [Gemini](https://aistudio.google.com/apikey), [Claude](https://console.anthropic.com/settings/keys) u [OpenAI](https://platform.openai.com/api-keys), o [Ollama](https://ollama.com/download) para usar modelos locales sin clave.
+
+## Descarga
+
+Con Git:
+
+```bash
+git clone https://github.com/TU-USUARIO/ryan.git
+cd ryan
+```
+
+Sustituye `TU-USUARIO` y el nombre por los de este repositorio. Sin Git, usa **Code > Download ZIP** en la página del repositorio y descomprime la carpeta.
+
+## Configuración
+
+No hay archivos de configuración que editar a mano: todo se hace desde la propia aplicación, en la pestaña **Ajustes** del chat.
+
+### 1. Elige tu IA
+
+En **Ajustes > IA** elige el proveedor (por defecto, Gemini) y, si quieres, un modelo concreto. Si lo dejas vacío usa el predeterminado de ese proveedor.
+
+**Con API key (Gemini, Claude, OpenAI)**
+
+1. Consigue una clave en la página del proveedor (enlaces en [Requisitos](#requisitos)).
+2. Pégala en *Ajustes > IA > API key* y pulsa *Guardar*. Se guarda en el Administrador de credenciales de Windows.
+3. Alternativa para desarrollo: define la variable de entorno `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` u `OPENAI_API_KEY` antes de ejecutar. Si hay una clave guardada, tiene prioridad sobre la variable.
+
+También puedes escribir `/key TU_CLAVE` en el chat (guarda la clave del proveedor activo) o `/forget` para borrarla.
+
+**Sin API key (modelo local)**
+
+Elige *Ollama (modelo local)*; mira [Modelos locales con Ollama](#modelos-locales-con-ollama).
+
+### 2. Personaliza lo demás
+
+| Pestaña | Qué configuras |
+| --- | --- |
+| **Mascota** | Nombre del asistente (la IA lo conoce), avatar, si pasea y mira al cursor, comentarios sobre tu uso del equipo y memoria. |
+| **IA** | Proveedor, modelo, API key o dirección de Ollama. |
+| **Avisos** | Sonidos y volumen, avisos de batería. |
+| **Sistema** | Atajo de teclado, iniciar con Windows y qué aplicaciones puede abrir la IA. |
+| **Seguridad** | Confirmación en todas las acciones, control de otras aplicaciones y qué herramientas están activas. |
+
+El atajo para abrir el chat es **Win + Shift + K** (si otro programa lo usa, prueba con **Ctrl + Alt + K**); puedes cambiarlo en *Ajustes > Sistema*.
+
+## Ejecución
+
+Desde la carpeta del proyecto:
+
+```bash
+cargo run -p ryan
+```
+
+La primera vez descarga y compila las dependencias, y **puede tardar varios minutos**. Las siguientes son rápidas. Para una versión optimizada:
+
+```bash
+cargo run -p ryan --release
+```
+
+El ejecutable queda en `target\release\ryan.exe` y puedes abrirlo con doble clic.
+
+Al arrancar aparece la mascota en una esquina del escritorio y un icono en la bandeja del sistema. Haz clic en la mascota, pulsa el atajo o usa el icono de la bandeja para abrir el chat. Solo se abre una copia a la vez. Para cerrarlo, usa el icono de la bandeja > **Salir**.
+
+## Uso
+
+Abre el chat y escribe con naturalidad. Algunos ejemplos:
+
+- "Pon *Do I Wanna Know* de Arctic Monkeys en Spotify."
+- "Busca en YouTube un vídeo de recetas de pasta y reprodúcelo."
+- "Crea una carpeta llamada Fotos en el escritorio."
+- "Organiza mi carpeta de Descargas." / "Deshaz la última organización."
+- "Borra la carpeta Pruebas del escritorio." *(te pedirá confirmación y la enviará a la Papelera)*
+- "Recuérdame estirar las piernas en 30 minutos."
+- "¿Qué noticias hay hoy sobre…?"
+- "Recuerda que mi comida favorita es la pizza."
+- "Mira esta ventana y dime qué error muestra." *(con un modelo con visión)*
+
+Comandos del chat:
+
+| Comando | Qué hace |
+| --- | --- |
+| `/new` | Empieza una conversación nueva. |
+| `/tools` | Lista las herramientas disponibles. |
+| `/key TU_CLAVE` | Guarda la API key del proveedor activo. |
+| `/forget` | Borra la API key guardada del proveedor activo. |
+
+**Música:** para Spotify necesitas la **aplicación de escritorio** con la sesión iniciada (no sirve Spotify Web). YouTube y YouTube Music se abren en tu navegador predeterminado.
+
+## Modelos locales con Ollama
+
+Con [Ollama](https://ollama.com/download) la IA corre en tu equipo: sin API key, sin coste y sin que tus mensajes salgan de él.
+
+1. Instala Ollama y descarga un modelo:
+
+   ```bash
+   ollama pull qwen3:8b
+   ```
+
+2. En *Ajustes > IA* elige **Ollama (modelo local)**.
+3. Pulsa **Probar y buscar modelos**: comprueba la conexión y te sugiere los que tienes descargados. Escribe el nombre en *Modelo* y guarda. La dirección por defecto es `http://localhost:11434`.
+
+Qué modelo elegir (Ryan necesita que **admita herramientas**):
+
+| Modelo | Para qué | Tamaño aprox. |
+| --- | --- | --- |
+| `qwen3:8b` | Uso diario. Es el predeterminado y cabe en una GPU de 8 GB. | 5 GB |
+| `qwen3:4b` | Equipos más modestos. Algo menos fiable con herramientas. | 2,5 GB |
+| `qwen3.5:9b` | **Tiene visión**: permite que mire una ventana con `look_at_screen`. | 6,6 GB |
+| `llama3.1:8b` | Alternativa con buen soporte de herramientas. | 5 GB |
+
+Limitaciones con Ollama:
+
+- No tiene búsqueda web integrada, así que la herramienta de búsqueda no funciona con él.
+- Los modelos pequeños se equivocan más al elegir herramientas que Gemini, Claude u OpenAI.
+- `deepseek-r1` en su versión base no admite herramientas, así que Ollama lo rechaza.
+- La primera respuesta tarda más porque el modelo se carga en memoria.
+
+## Dónde se guardan tus datos
+
+| Dato | Dónde |
+| --- | --- |
+| Ajustes (atajo, avatar, modelo elegido…) | `%APPDATA%\ZenPet\settings.json` |
+| Memoria, recordatorios y registro para deshacer | `%APPDATA%\ZenPet\` |
+| API keys | Administrador de credenciales de Windows (`zen-pet`) |
+
+Lo que escribes en el chat se envía al proveedor de IA que hayas elegido (con Ollama no sale de tu equipo). Una captura de ventana solo se envía cuando confirmas cada vez, no se guarda en disco y solo se conserva la más reciente durante la conversación.
+
+## Personalizar
+
+### Añadir un personaje
+
+1. Crea una carpeta en `assets/` con los fotogramas del personaje (PNG numerados).
+2. Añádelo a `assets/characters.json`:
+
+   ```json
+   {
+     "id": "mipersonaje",
+     "name": "Mi personaje",
+     "folder": "mipersonaje",
+     "pattern": "sprite_{nn}.png",
+     "frames": 8,
+     "preview_frame": 1,
+     "speed": 1.0
+   }
+   ```
+
+   `{n}` es el número sin ceros (1, 2…) y `{nn}` con dos cifras (01, 02…). Se compila de nuevo y aparece en *Ajustes > Mascota > Avatar*. El archivo explica además cómo darle una animación propia a cada estado.
+
+### Añadir una herramienta
+
+Cada herramienta implementa el trait `Tool` de `zen-core` (nombre, esquema de parámetros, nivel de riesgo, validación, vista previa y ejecución) y se registra en `crates/zen-desktop/src/lib.rs`. El resto, incluidos los permisos y la confirmación, lo gestiona el sistema.
+
+## Estructura del proyecto
+
+```text
+assets/            Sprites y manifiesto de personajes (assets/characters.json)
+crates/
+  zen-core/        Núcleo: eventos, herramientas, permisos, ejecutor y bucle del asistente
+  zen-character/   Máquina de estados y comportamiento de la mascota
+  zen-desktop/     Herramientas de Windows: archivos, apps, música, ventanas, sistema…
+  zen-ai/          Proveedores de IA: Gemini, Claude, OpenAI y Ollama
+src-tauri/         Aplicación Tauri 2: ventanas, ajustes, bandeja, atajo y comandos
+ui/                Interfaz (HTML, CSS y JavaScript sin dependencias)
+docs/images/       Capturas de este README
+plan.md            Especificación original del proyecto
+```
+
+`ui/assets/` se genera sola al compilar a partir de `assets/`; no hay que tocarla ni subirla.
+
+## Desarrollo
+
+```bash
+cargo test --workspace
+```
+
+Algunas pruebas necesitan el sistema real (Spotify, la Papelera, Ollama, una ventana abierta) y están marcadas como ignoradas. Se ejecutan a propósito, por ejemplo:
+
+```bash
+cargo test -p zen-desktop -- --ignored --nocapture papelera_real
+cargo test -p zen-ai -- --ignored --nocapture ollama_real
+```
+
+## Problemas frecuentes
+
+**`Access is denied` al compilar.** Ryan sigue abierto y Windows no deja reemplazar el programa. Ciérralo desde el icono de la bandeja y vuelve a compilar.
+
+**"Para hablar conmigo necesito tu API key".** Falta la clave del proveedor elegido: guárdala en *Ajustes > IA*, o cambia a Ollama.
+
+**"Ollama no responde".** Comprueba que Ollama esté abierto y que la dirección de *Ajustes > IA* sea correcta (por defecto, `http://localhost:11434`).
+
+**El modelo no puede ver imágenes.** Para `look_at_screen` usa un modelo con visión, como `qwen3.5:9b`.
+
+**El atajo no abre el chat.** Otro programa lo está usando. Cámbialo en *Ajustes > Sistema* o usa el icono de la bandeja.
+
+**No reproduce en Spotify.** Necesita la aplicación de escritorio abierta con la sesión iniciada. Si Spotify cambia su interfaz, la herramienta puede necesitar un ajuste.
+
+**El navegador no abre la pestaña.** YouTube y YouTube Music se abren con el navegador predeterminado de Windows.
+
+## Licencia
+
+Pendiente de elegir. Añade un archivo `LICENSE` antes de aceptar contribuciones o de compartir el proyecto.

@@ -1,0 +1,92 @@
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; }
+#pet { position: relative; width: 100%; height: 100%; cursor: pointer; transform-origin: 50% 100%; }
+#flip { width: 100%; height: 100%; }
+/* Se asume que los sprites miran a la derecha (o de frente); al ir hacia la izquierda se voltean. */
+#pet[data-facing="left"] #flip { transform: scaleX(-1); }
+#sprite { width: 100%; height: 100%; display: block; object-fit: contain; pointer-events: none; transform-origin: 50% 90%; }
+
+.bubble {
+  position: absolute; top: 0; right: 0; display: none; z-index: 1;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+  background: #fff; color: #333; text-align: center;
+  font: 700 12px/20px "Segoe UI", sans-serif; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+#pet[data-state="thinking"] .bubble, #pet[data-state="working"] .bubble, #pet[data-state="sleeping"] .bubble,
+#pet[data-state="success"] .bubble, #pet[data-state="surprised"] .bubble { display: block; }
+/* Pensando: tres puntos que rebotan en cadena (en lugar de un «…» fijo). */
+.dots { display: none; align-items: center; justify-content: center; gap: 3px; height: 100%; }
+.dots i { width: 4px; height: 4px; border-radius: 50%; background: #4a6fd8; animation: dot 1.1s ease-in-out infinite; }
+.dots i:nth-child(2) { animation-delay: 0.15s; }
+.dots i:nth-child(3) { animation-delay: 0.3s; }
+#pet[data-state="thinking"] .dots { display: inline-flex; }
+#pet[data-state="thinking"] .bubble { padding: 0 7px; }
+#pet[data-state="working"] .bubble::before { content: "\2699"; display: inline-block; animation: spin 1.2s linear infinite; }
+#pet[data-state="sleeping"] .bubble::before { content: "z"; }
+#pet[data-state="success"] .bubble::before { content: "\2713"; color: #2e9e4f; }
+#pet[data-state="surprised"] .bubble::before { content: "!"; color: #d33; }
+
+/* El sprite solo tiene la animación "standing"; las emociones se expresan moviendo y tiñendo ese sprite. */
+#pet[data-state="thinking"] #sprite { animation: tilt 2s ease-in-out infinite; }
+#pet[data-state="interacting"] #sprite { animation: tilt 0.6s ease-in-out 2; }
+#pet[data-state="working"] #sprite { animation: bob 0.5s ease-in-out infinite; }
+#pet[data-state="walking"] #sprite { animation: step 0.5s ease-in-out infinite; }
+#pet[data-state="happy"] #sprite { animation: tilt 0.4s ease-in-out infinite; }
+/* Celebrar: saltitos y unas chispas que suben. */
+#pet[data-state="success"] #sprite { animation: hop 0.5s ease-out 2; }
+#pet[data-state="happy"]::after, #pet[data-state="success"]::after {
+  content: "\2728"; position: absolute; left: 4px; top: 6px; font-size: 14px; pointer-events: none;
+  animation: sparkle 0.9s ease-out infinite;
+}
+#pet[data-state="success"]::after { left: auto; right: 4px; animation-delay: 0.2s; }
+#pet[data-state="surprised"] .bubble::before { display: inline-block; animation: pop 0.35s ease-out 2; }
+/* Dormida: respira despacio y suben las «z». */
+#pet[data-state="sleeping"] #sprite { filter: brightness(0.75) saturate(0.7); animation: breathe 3.6s ease-in-out infinite; }
+#pet[data-state="sleeping"] .bubble::before { display: inline-block; animation: zzz 2.4s ease-in-out infinite; }
+/* Un halo que respira: azul al pensar, ámbar al trabajar. Va en #flip para no pisar el movimiento del sprite. */
+#pet[data-state="thinking"] #flip { animation: glow-think 1.6s ease-in-out infinite; }
+#pet[data-state="working"] #flip { animation: glow-work 1s ease-in-out infinite; }
+/* Alerta (recordatorio): la campanilla suena y la mascota no para hasta que le hagas caso. */
+#pet[data-state="alert"] .bubble { display: block; }
+#pet[data-state="alert"] .bubble::before { content: "\23F0"; display: inline-block; animation: ring 0.9s ease-in-out infinite; }
+#pet[data-state="alert"][data-alert-kind="battery"] .bubble::before { content: "\1F50B"; animation: ring 1.4s ease-in-out infinite; }
+#pet[data-state="alert"][data-alert-kind="rest"] .bubble::before { content: "\2615"; animation: zzz 2s ease-in-out infinite; }
+#pet[data-state="alert"] #sprite { animation: bob 0.3s ease-in-out infinite; }
+#pet[data-state="alert"] #flip { animation: glow-alert 0.8s ease-in-out infinite; }
+#pet[data-state="surprised"] { animation: shake 0.4s ease-in-out 2; }
+#pet[data-state="success"] { animation: bounce 0.5s ease-out 2; }
+#pet.bounce { animation: bounce 0.5s ease-out; }
+
+@keyframes breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.015, 0.975); } }
+@keyframes zzz { 0%, 100% { transform: translateY(1px) scale(0.85); opacity: 0.6; } 50% { transform: translateY(-3px) scale(1.1); opacity: 1; } }
+@keyframes step { 0%, 100% { transform: translateY(0) rotate(-3deg); } 25% { transform: translateY(-3px) rotate(0); } 50% { transform: translateY(0) rotate(3deg); } 75% { transform: translateY(-3px) rotate(0); } }
+@keyframes hop { 0% { transform: translateY(0) scale(1, 1); } 40% { transform: translateY(-10px) scale(0.96, 1.05) rotate(-6deg); } 70% { transform: translateY(0) scale(1.05, 0.95); } 100% { transform: translateY(0) scale(1, 1); } }
+@keyframes sparkle { 0% { transform: translateY(6px) scale(0.4); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(-12px) scale(1.1) rotate(25deg); opacity: 0; } }
+@keyframes pop { 0% { transform: scale(0.6); } 60% { transform: scale(1.4); } 100% { transform: scale(1); } }
+@keyframes tilt   { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+@keyframes bob    { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes shake  { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@keyframes spin   { to { transform: rotate(360deg); } }
+@keyframes dot    { 0%, 80%, 100% { transform: translateY(0); opacity: 0.45; } 40% { transform: translateY(-3px); opacity: 1; } }
+@keyframes glow-think {
+  0%, 100% { filter: drop-shadow(0 0 1px rgba(122, 162, 255, 0.2)); }
+  50% { filter: drop-shadow(0 0 6px rgba(122, 162, 255, 0.95)); }
+}
+@keyframes ring {
+  0%, 60%, 100% { transform: rotate(0); }
+  10% { transform: rotate(16deg); } 20% { transform: rotate(-16deg); } 30% { transform: rotate(12deg); }
+  40% { transform: rotate(-12deg); } 50% { transform: rotate(6deg); }
+}
+@keyframes glow-alert {
+  0%, 100% { filter: drop-shadow(0 0 1px rgba(255, 90, 90, 0.2)); }
+  50% { filter: drop-shadow(0 0 7px rgba(255, 90, 90, 0.95)); }
+}
+@keyframes glow-work {
+  0%, 100% { filter: drop-shadow(0 0 1px rgba(255, 176, 64, 0.2)); }
+  50% { filter: drop-shadow(0 0 6px rgba(255, 176, 64, 0.95)); }
+}
+@keyframes bounce {
+  0% { transform: translateY(0) scale(1, 1); }
+  30% { transform: translateY(-12px) scale(0.95, 1.06); }
+  60% { transform: translateY(0) scale(1.06, 0.94); }
+  100% { transform: translateY(0) scale(1, 1); }
+}
