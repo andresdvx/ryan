@@ -96,6 +96,21 @@ function addMessage(role, text) {
   addToHistory(el);
 }
 
+// Frases para esperar: cambian en cada espera, pero no a mitad de ella.
+const WAITING = {
+  thinking: ["Pensando…", "Déjame ver…", "Mmm, a ver…", "Un momentito…"],
+  working: ["Manos a la obra…", "En eso estoy…", "Casi casi…", "Trabajando en ello…"],
+};
+let phrase = null;
+
+function typingPhrase() {
+  if (!phrase || phrase.state !== busyState) {
+    const options = WAITING[busyState] ?? WAITING.thinking;
+    phrase = { state: busyState, text: options[Math.floor(Math.random() * options.length)] };
+  }
+  return phrase.text;
+}
+
 function renderTyping() {
   // Mientras se espera la respuesta del usuario a una confirmación no se aparenta estar ocupado.
   const show = busyState !== null && pendingConfirmations === 0;
@@ -120,7 +135,7 @@ function renderTyping() {
     typingEl.append(dots, label, steps);
     history.appendChild(typingEl);
   }
-  typingEl.querySelector(".label").textContent = busyState === "working" ? "Trabajando…" : "Pensando…";
+  typingEl.querySelector(".label").textContent = typingPhrase();
   const steps = typingEl.querySelector(".steps");
   steps.textContent = progressText(taskProgress);
   steps.hidden = !steps.textContent;
@@ -204,6 +219,7 @@ form.addEventListener("submit", (e) => {
   remember(text);
   recallIndex = null;
   input.value = "";
+  hideIdeas();
   // La API key no debe quedar a la vista en el historial.
   addMessage("user", text.startsWith("/key ") ? "/key ••••••••" : text);
   invoke("submit_message", { text });
@@ -224,23 +240,68 @@ let assistantName = "Ryan";
 function applyName(name) {
   assistantName = name;
   titleEl.textContent = name;
-  input.placeholder = `Pídele algo a ${name}…`;
+  input.placeholder = `Cuéntale a ${name} qué necesitas…`;
+}
+
+// Un saludo que cambia con la hora, como el de un amigo y no el de un servicio.
+function greeting() {
+  const hour = new Date().getHours();
+  const hello = hour >= 5 && hour < 12 ? "¡Buenos días!" : hour >= 12 && hour < 20 ? "¡Hola!" : "¡Buenas noches!";
+  const closing = hour >= 5 && hour < 12 ? "¿Empezamos el día juntos?" : hour >= 12 && hour < 20 ? "¿Qué hacemos hoy?" : "¿Te acompaño un rato?";
+  return `${hello} Soy ${assistantName}, tu compañero de escritorio 💛 ${closing}`;
+}
+
+// Ideas para arrancar: al pulsar una se escribe en la caja (sin enviarla) para que la ajustes a tu gusto.
+const IDEAS = [
+  ["🎵", "Pon música tranquila"],
+  ["⏰", "Recuérdame descansar en 30 minutos"],
+  ["📂", "Organiza mi carpeta de Descargas"],
+  ["🔎", "Busca algo interesante para hoy"],
+];
+let ideasEl = null;
+
+function showIdeas() {
+  ideasEl = document.createElement("div");
+  ideasEl.className = "ideas";
+  for (const [icon, text] of IDEAS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "idea";
+    button.textContent = `${icon} ${text}`;
+    button.addEventListener("click", () => {
+      input.value = text;
+      input.focus();
+      input.setSelectionRange(text.length, text.length);
+    });
+    ideasEl.append(button);
+  }
+  addToHistory(ideasEl);
+}
+
+function hideIdeas() {
+  ideasEl?.remove();
+  ideasEl = null;
 }
 
 invoke("get_assistant_name")
   .then(applyName)
   .catch(() => {})
   .finally(() => {
-    addMessage("assistant", `Soy ${assistantName}. ¿En qué te puedo ayudar?`);
+    addMessage("assistant", greeting());
+    showIdeas();
   });
 window.__TAURI__.event.listen("assistant-name-changed", (e) => applyName(e.payload));
 const STATUS_TEXT = {
-  idle: "Listo", walking: "Paseando", sleeping: "Durmiendo", thinking: "Pensando…", working: "Trabajando…",
-  success: "¡Hecho!", happy: "Contento", surprised: "Algo salió mal", interacting: "Listo", alert: "¡Recordatorio!",
+  idle: "Aquí contigo", walking: "Estirando las patitas", sleeping: "Zzz… soñando", thinking: "Pensando…", working: "Manos a la obra…",
+  success: "¡Listo, lo logramos!", happy: "¡Qué alegría!", surprised: "¡Ay! Algo falló", interacting: "¡Hola, hola!", alert: "¡Ojo, aviso!",
 };
+// Cómo luce la cabecera según el ánimo: ocupado, adormilado o tranquilo.
+const MOOD_OF = { thinking: "busy", working: "busy", sleeping: "sleepy" };
 window.__TAURI__.event.listen("character-state", (e) => {
   statusEl.textContent = STATUS_TEXT[e.payload] ?? e.payload;
   const state = e.payload;
+  document.body.dataset.mood = MOOD_OF[state] ?? "calm";
+  playFriend(state);
   // Entre dos pasos de una misma tarea no se aparenta haber terminado.
   const midTask = state === "success" && taskProgress && taskProgress.step < taskProgress.total;
   if (!midTask && state !== "thinking" && state !== "working" && state !== "success") taskProgress = null;
@@ -288,14 +349,74 @@ window.__TAURI__.event.listen("confirmation-request", (e) => showConfirmation(e.
 // Avatar de la cabecera: el personaje elegido (se actualiza al cambiarlo en Ajustes).
 const headerAvatar = document.getElementById("header-avatar");
 
+// Milisegundos por frame, como en la mascota; en la cabecera van algo más lentos para no distraer mientras escribes.
+const FRAME_MS = { idle: 110, walking: 90, thinking: 130, working: 70, success: 80, happy: 70, surprised: 90, interacting: 80, alert: 70, sleeping: 260 };
+const HEADER_SLOWDOWN = 1.7;
+let friend = null; // { entry, base, sets }
+let friendState = "idle";
+let friendFrames = [];
+let friendIndex = 0;
+let friendTimer = null;
+
+function hexToRgb(hex) {
+  const match = /^#([0-9a-f]{6})$/i.exec(hex ?? "");
+  if (!match) return null;
+  const n = parseInt(match[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// Cada amigo tiene sus colores (manifiesto): tiñen el chat entero. Sin ellos se queda el violeta de siempre.
+function applyTheme(entry) {
+  const root = document.documentElement.style;
+  const accent = hexToRgb(entry.accent);
+  const accent2 = hexToRgb(entry.accent2);
+  if (accent) root.setProperty("--accent-rgb", accent.join(" "));
+  else root.removeProperty("--accent-rgb");
+  if (accent2) root.setProperty("--accent-2-rgb", accent2.join(" "));
+  else root.removeProperty("--accent-2-rgb");
+  root.setProperty("--friend-img", `url("${previewUrl(entry)}")`);
+}
+
+function playFriend(state) {
+  friendState = state;
+  clearInterval(friendTimer);
+  if (!friend) return;
+  const own = friend.sets[state];
+  friendFrames = own?.length ? own : friend.base;
+  friendIndex = 0;
+  headerAvatar.src = friendFrames[0].src;
+  // Dormido o en reposo basta con un solo cuadro si no hay nada más que mover.
+  if (friendFrames.length < 2) return;
+  const ms = (FRAME_MS[state] ?? FRAME_MS.idle) * (friend.entry.speed ?? 1) * HEADER_SLOWDOWN;
+  friendTimer = setInterval(() => {
+    friendIndex = (friendIndex + 1) % friendFrames.length;
+    headerAvatar.src = friendFrames[friendIndex].src;
+  }, ms);
+}
+
 async function loadHeaderAvatar() {
   try {
     characterManifest ??= await fetch("assets/characters.json").then((response) => response.json());
     const id = await invoke("get_character");
     const entry = characterManifest.characters.find((c) => c.id === id) ?? characterManifest.characters[0];
-    headerAvatar.src = previewUrl(entry);
+    applyTheme(entry);
+    const load = (spec) =>
+      Array.from({ length: spec.frames }, (_, i) => {
+        const img = new Image();
+        img.src = frameUrl(spec, i + 1);
+        return img;
+      });
+    const base = load(entry);
+    const sets = {};
+    for (const [state, spec] of Object.entries(entry.states ?? {})) {
+      sets[state] = Array.isArray(spec.sequence) ? spec.sequence.map((n) => base[n - 1]).filter(Boolean) : load(spec);
+    }
+    friend = { entry, base, sets };
     headerAvatar.hidden = false;
+    playFriend(friendState);
   } catch {
+    friend = null;
+    clearInterval(friendTimer);
     headerAvatar.hidden = true;
   }
 }
@@ -370,6 +491,7 @@ const volumeInput = document.getElementById("sound-volume");
 const volumeValue = document.getElementById("sound-volume-value");
 const testSoundButton = document.getElementById("test-sound");
 const batteryBox = document.getElementById("battery-alerts");
+const systemEventsBox = document.getElementById("system-events");
 const soundMessage = document.getElementById("sound-message");
 const usageBox = document.getElementById("usage-comments");
 const memoryBox = document.getElementById("memory-enabled");
@@ -436,6 +558,7 @@ function renderSettings() {
   volumeInput.disabled = testSoundButton.disabled = !settings.sound_enabled;
   volumeValue.textContent = `${settings.sound_volume}%`;
   batteryBox.checked = settings.battery_alerts;
+  systemEventsBox.checked = settings.system_events;
   usageBox.checked = settings.usage_comments;
   memoryBox.checked = settings.memory_enabled;
   ccState.textContent = settings.computer_control ? "activado" : "desactivado";
@@ -532,10 +655,13 @@ appsFilter.addEventListener("input", renderApps);
 // Los personajes se describen en assets/characters.json, el mismo archivo que usa la mascota.
 let characterManifest = null;
 
-function previewUrl(entry) {
-  const n = entry.preview_frame;
+function frameUrl(entry, n) {
   const name = entry.pattern.replace("{nn}", String(n).padStart(2, "0")).replace("{n}", String(n));
   return `assets/${entry.folder}/${name}`;
+}
+
+function previewUrl(entry) {
+  return frameUrl(entry, entry.preview_frame);
 }
 
 async function renderAvatars() {
@@ -698,6 +824,7 @@ document.getElementById("cc-cancel").addEventListener("click", () => (ccWarning.
 document.getElementById("cc-confirm").addEventListener("click", () => changeSetting(ccMessage, "set_computer_control", { enabled: true }));
 soundBox.addEventListener("change", () => changeSetting(soundMessage, "set_sound", { enabled: soundBox.checked }));
 batteryBox.addEventListener("change", () => changeSetting(soundMessage, "set_sound", { batteryAlerts: batteryBox.checked }));
+systemEventsBox.addEventListener("change", () => changeSetting(soundMessage, "set_sound", { systemEvents: systemEventsBox.checked }));
 volumeInput.addEventListener("input", () => (volumeValue.textContent = `${volumeInput.value}%`));
 volumeInput.addEventListener("change", () => changeSetting(soundMessage, "set_sound", { volume: Number(volumeInput.value) }));
 testSoundButton.addEventListener("click", () => invoke("test_sound", { volume: Number(volumeInput.value) }));

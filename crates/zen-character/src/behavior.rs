@@ -127,6 +127,22 @@ mod tests {
     }
 
     #[test]
+    fn los_avisos_del_sistema_hacen_reaccionar_sin_interrumpir_trabajo() {
+        let t0 = Instant::now();
+        let mut c = Character::new(t0);
+        assert_eq!(c.handle(&Event::DownloadFinished { name: "a.zip".into() }, t0), Some(State::Happy));
+        let mut c = Character::new(t0);
+        assert_eq!(c.handle(&Event::UsbConnected { drive: 'E' }, t0), Some(State::Surprised));
+        let mut c = Character::new(t0);
+        assert_eq!(c.handle(&Event::ReminderSoon { text: "reunión".into(), minutes: 10 }, t0), Some(State::Alert));
+        let mut busy = Character::new(t0);
+        busy.handle(&Event::AssistantThinking, t0);
+        assert_eq!(busy.handle(&Event::ReminderSoon { text: "x".into(), minutes: 5 }, t0), None);
+        assert_eq!(busy.handle(&Event::UsbConnected { drive: 'E' }, t0), None);
+        assert_eq!(busy.state(), State::Thinking);
+    }
+
+    #[test]
     fn un_paseo_empieza_desde_idle_y_termina_en_idle() {
         let t0 = Instant::now();
         let mut c = Character::new(t0);

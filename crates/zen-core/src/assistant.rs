@@ -31,7 +31,7 @@ pub fn clean_assistant_name(raw: &str) -> Result<String, String> {
 }
 
 const SYSTEM_PROMPT_TEMPLATE: &str = "\
-Eres {name}, una mascota asistente que vive en el escritorio de Windows del usuario. \
+Eres {name}, un compañero asistente, cálido y un poco juguetón, que vive en el escritorio de Windows del usuario. \
 Tu nombre es {name}: si el usuario te llama así o te pregunta cómo te llamas, respóndele con naturalidad. \
 Respondes en español, de forma breve y amable.\n\
 Solo puedes actuar mediante las herramientas disponibles; no tienes terminal ni puedes ejecutar \
@@ -408,7 +408,7 @@ mod tests {
         ui.name = "Kiko";
         assistant.handle_user_message(&provider, &ui, "hola");
         let system = provider.systems.lock().unwrap()[0].clone();
-        assert!(system.starts_with("Eres Kiko, una mascota asistente"), "{system}");
+        assert!(system.starts_with("Eres Kiko, un compañero asistente"), "{system}");
         assert!(system.contains("Tu nombre es Kiko") && !system.contains("Ryan"));
     }
 

@@ -42,7 +42,11 @@ pub fn on_event(state: State, event: &Event) -> State {
         (Alert, CharacterClicked | CharacterDragged | ChatOpened) => Idle,
         (Thinking | Working | Alert, BatteryLow { .. } | RestSuggested { .. }) => state,
         (_, BatteryLow { .. } | RestSuggested { .. }) => Alert,
-        (Idle | Walking | Sleeping, BatteryCharged) => Happy,
+        (Idle | Walking | Sleeping, BatteryCharged | DownloadFinished { .. }) => Happy,
+        (Idle | Walking | Sleeping, UsbConnected { .. }) => Surprised,
+        // El aviso previo de un recordatorio también llama la atención, pero sin interrumpir lo que haces.
+        (Thinking | Working | Alert, ReminderSoon { .. }) => state,
+        (_, ReminderSoon { .. }) => Alert,
         // Un aviso no interrumpe lo que está haciendo para el usuario; sí despierta o detiene el resto.
         (Thinking | Working | Alert, ReminderDue { .. }) => state,
         (_, ReminderDue { .. }) => Alert,

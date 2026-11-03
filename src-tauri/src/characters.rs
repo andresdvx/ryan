@@ -96,6 +96,20 @@ mod tests {
                 let path = assets_dir().join(folder).join(&name);
                 assert!(path.is_file(), "{id}: falta el frame {n}: {}", path.display());
             }
+            for color in ["accent", "accent2"] {
+                let value = entry[color].as_str().unwrap_or("#000000");
+                assert!(value.len() == 7 && value.starts_with('#') && value[1..].chars().all(|c| c.is_ascii_hexdigit()), "{id}: {color} no es un color #rrggbb");
+            }
+            for (state, spec) in entry["states"].as_object().into_iter().flatten() {
+                // Una animación de estado sin carpeta propia reutiliza los frames del personaje.
+                if let Some(sequence) = spec["sequence"].as_array() {
+                    assert!(!sequence.is_empty(), "{id}/{state}: secuencia vacía");
+                    for n in sequence {
+                        let n = n.as_u64().unwrap_or(0);
+                        assert!((1..=frames).contains(&n), "{id}/{state}: el frame {n} no existe");
+                    }
+                }
+            }
         }
     }
 }

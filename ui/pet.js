@@ -57,13 +57,15 @@ async function useCharacter(id) {
       return img;
     });
   const images = load(entry);
-  const sets = Object.fromEntries(Object.entries(entry.states ?? {}).map(([state, spec]) => [state, load(spec)]));
+  // Un estado puede declarar «sequence»: frames de la propia carpeta del personaje, en el orden y ritmo que se quiera.
+  const own = (spec) => (Array.isArray(spec.sequence) ? spec.sequence.map((n) => images[n - 1]) : load(spec));
+  const sets = Object.fromEntries(Object.entries(entry.states ?? {}).map(([state, spec]) => [state, own(spec)]));
   // Se precargan todos los frames antes de cambiar, para que no haya parpadeos ni huecos.
   await Promise.all([...images, ...Object.values(sets).flat()].map((img) => img.decode().catch(() => {})));
   if (token !== loadToken) return; // se pidió otro personaje mientras cargaba: gana el último
   // Una animación de estado que no cargó (archivo ausente) se descarta: ese estado usa «standing».
   for (const [state, set] of Object.entries(sets)) {
-    if (!set.every((img) => img.naturalWidth > 0)) delete sets[state];
+    if (!set.length || !set.every((img) => img?.naturalWidth > 0)) delete sets[state];
   }
 
   character = entry;

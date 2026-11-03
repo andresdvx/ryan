@@ -10,8 +10,12 @@ use crate::settings::Settings;
 pub fn sound_for(event: &Event) -> Option<SoundKind> {
     match event {
         Event::ReminderDue { .. } => Some(SoundKind::Reminder),
-        Event::BatteryLow { .. } | Event::RestSuggested { .. } | Event::ToolConfirmationRequired { .. } => Some(SoundKind::Notify),
-        Event::BatteryCharged | Event::ToolCompleted { .. } => Some(SoundKind::Success),
+        Event::BatteryLow { .. }
+        | Event::RestSuggested { .. }
+        | Event::ToolConfirmationRequired { .. }
+        | Event::UsbConnected { .. }
+        | Event::ReminderSoon { .. } => Some(SoundKind::Notify),
+        Event::BatteryCharged | Event::DownloadFinished { .. } | Event::ToolCompleted { .. } => Some(SoundKind::Success),
         Event::ToolFailed { .. } | Event::AssistantFailed { .. } => Some(SoundKind::Error),
         _ => None,
     }
@@ -52,6 +56,9 @@ mod tests {
         assert_eq!(sound_for(&Event::BatteryLow { percent: 9 }), Some(SoundKind::Notify));
         assert_eq!(sound_for(&Event::ToolConfirmationRequired { tool: "x".into() }), Some(SoundKind::Notify));
         assert_eq!(sound_for(&Event::ToolCompleted { tool: "x".into() }), Some(SoundKind::Success));
+        assert_eq!(sound_for(&Event::DownloadFinished { name: "a.zip".into() }), Some(SoundKind::Success));
+        assert_eq!(sound_for(&Event::UsbConnected { drive: 'E' }), Some(SoundKind::Notify));
+        assert_eq!(sound_for(&Event::ReminderSoon { text: "x".into(), minutes: 10 }), Some(SoundKind::Notify));
         assert_eq!(sound_for(&Event::ToolFailed { tool: "x".into(), error: "e".into() }), Some(SoundKind::Error));
         assert_eq!(sound_for(&Event::AssistantFailed { error: "e".into() }), Some(SoundKind::Error));
     }

@@ -15,8 +15,8 @@
     <button id="close" title="Cerrar (Esc)" aria-label="Cerrar">&times;</button>
   </header>
   <nav class="tabs" role="tablist">
-    <button class="tab active" role="tab" data-tab="chat" aria-selected="true">Chat</button>
-    <button class="tab" role="tab" data-tab="settings" aria-selected="false">Ajustes</button>
+    <button class="tab active" role="tab" data-tab="chat" aria-selected="true">💬 Charla</button>
+    <button class="tab" role="tab" data-tab="settings" aria-selected="false">⚙️ Ajustes</button>
   </nav>
 
   <div id="view-chat" class="view">
@@ -39,7 +39,7 @@
       </div>
     </section>
     <form id="form" autocomplete="off">
-      <input id="input" type="text" placeholder="Escribe una solicitud..." autofocus>
+      <input id="input" type="text" placeholder="Cuéntame qué necesitas…" autofocus>
       <button type="submit" id="send" aria-label="Enviar" title="Enviar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12.6 2-12.6 2z"/></svg></button>
     </form>
   </div>
@@ -153,6 +153,11 @@
         <div class="card field">
           <h3>Batería</h3>
           <label class="switch"><input type="checkbox" id="battery-alerts"><span class="track"></span><span class="text">Avisar cuando esté baja o termine de cargar</span></label>
+        </div>
+        <div class="card field">
+          <h3>Equipo</h3>
+          <label class="switch"><input type="checkbox" id="system-events"><span class="track"></span><span class="text">Avisar cuando termine una descarga o conectes una memoria USB</span></label>
+          <p class="hint">Solo mira los nombres de los archivos de Descargas; no lee su contenido. Los recordatorios avisan siempre 10 minutos antes.</p>
           <div id="sound-message" class="message" role="status"></div>
         </div>
       </div>

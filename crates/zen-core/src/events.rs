@@ -20,6 +20,12 @@ pub enum Event {
     RestSuggested { minutes: u64 },
     /// El portátil enchufado llegó a la carga completa.
     BatteryCharged,
+    /// Terminó de descargarse un archivo en la carpeta Descargas.
+    DownloadFinished { name: String },
+    /// Se conectó una unidad extraíble (memoria USB, lector de tarjetas): su letra.
+    UsbConnected { drive: char },
+    /// Un recordatorio vence en pocos minutos (por ejemplo, una reunión).
+    ReminderSoon { text: String, minutes: u64 },
     /// Avance de una tarea de varios pasos: se va a ejecutar el paso `step` (desde 1) de `total`.
     TaskProgress { step: usize, total: usize, tool: String },
     ChatOpened,
