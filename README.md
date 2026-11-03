@@ -1,6 +1,6 @@
-# Ryan 🐾
+# Ryan
 
-Un asistente personal con IA que vive en tu escritorio de Windows como una mascota animada. Haz clic en ella (o pulsa un atajo), abre el chat y pídele cosas: abrir programas, poner música, ordenar tus archivos, recordarte algo, buscar en internet o incluso mirar una ventana y explicarte qué muestra.
+Un asistente personal con IA que vive en tu escritorio de Windows como un compañero animado. Haz clic en él (o pulsa un atajo), abre el chat y pídele cosas: abrir programas, poner música, ordenar tus archivos, recordarte algo, buscar en internet o incluso mirar una ventana y explicarte qué muestra.
 
 Está escrito en **Rust** con **Tauri 2**, y puede usar **Gemini, Claude, OpenAI** o **modelos locales con Ollama** (sin API key).
 
@@ -35,20 +35,21 @@ Está escrito en **Rust** con **Tauri 2**, y puede usar **Gemini, Claude, OpenAI
     <td align="center"><img src="docs/images/ai.png" alt="Ajustes de IA con Ollama" width="300"><br><sub>Elige proveedor de IA, incluido un modelo local</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/pet.png" alt="Ajustes de la mascota" width="300"><br><sub>Nombre, avatar, comportamiento y memoria</sub></td>
+    <td align="center"><img src="docs/images/pet.png" alt="Ajustes del compañero" width="300"><br><sub>Nombre, avatar, comportamiento y memoria</sub></td>
     <td align="center"><img src="docs/images/security.png" alt="Ajustes de seguridad" width="300"><br><sub>Tú decides qué herramientas puede usar la IA</sub></td>
   </tr>
 </table>
 
 ### Personajes
 
-Trae tres personajes; puedes [añadir los tuyos](#añadir-un-personaje).
+Trae cuatro personajes; puedes [añadir los tuyos](#añadir-un-personaje).
 
 <table>
   <tr>
-    <td align="center"><img src="assets/character/standing/character-1.png" alt="Zen" height="96"><br>Zen</td>
-    <td align="center"><img src="assets/poring/standing/sprite_04.png" alt="Poring" height="96"><br>Poring</td>
-    <td align="center"><img src="assets/fairy/sprite_01.png" alt="Fairy" height="96"><br>Fairy</td>
+    <td align="center"><img src="assets/character/standing/character-1.png" alt="Zen" height="96"><br>Zarina</td>
+    <td align="center"><img src="assets/poring/standing/sprite_04.png" alt="Poring" height="96"><br>Slime</td>
+    <td align="center"><img src="assets/fairy/sprite_01.png" alt="Fairy" height="96"><br>Paimon</td>
+    <td align="center"><img src="assets/pingu/sprite_01.png" alt="Pingu" height="96"><br>Pingu</td>
   </tr>
 </table>
 
@@ -56,7 +57,7 @@ Trae tres personajes; puedes [añadir los tuyos](#añadir-un-personaje).
 
 | Área | Ejemplos |
 | --- | --- |
-| **Mascota** | Se anima según lo que hace (reposo, pensando, trabajando, contenta…), pasea por el escritorio, mira hacia el cursor, avisa con la batería baja y sugiere descansos. |
+| **Personaje** | Se anima según lo que hace (reposo, pensando, trabajando, contenta…), pasea por el escritorio, mira hacia el cursor, avisa con la batería baja y sugiere descansos. |
 | **Archivos** | Crear, leer, buscar, mover, renombrar y **borrar enviando a la Papelera de Windows** (recuperable, nunca permanente). Organizar una carpeta por tipos y deshacerlo. Solo en Escritorio, Documentos y Descargas. |
 | **Programas y web** | Abrir las aplicaciones que tú permitas, abrir sitios web, buscar en internet con la búsqueda integrada de Gemini, Claude u OpenAI. |
 | **Música y vídeo** | Reproducir una canción en la **app de escritorio de Spotify**, en YouTube Music o en YouTube. Reproductor en el chat con pausa, anterior y siguiente para lo que suene en Windows. |
@@ -90,11 +91,9 @@ La IA **no tiene terminal ni ejecuta comandos**: solo puede usar herramientas co
 Con Git:
 
 ```bash
-git clone https://github.com/TU-USUARIO/ryan.git
+git clone https://github.com/andresdvx/ryan.git
 cd ryan
 ```
-
-Sustituye `TU-USUARIO` y el nombre por los de este repositorio. Sin Git, usa **Code > Download ZIP** en la página del repositorio y descomprime la carpeta.
 
 ## Configuración
 
@@ -120,7 +119,7 @@ Elige *Ollama (modelo local)*; mira [Modelos locales con Ollama](#modelos-locale
 
 | Pestaña | Qué configuras |
 | --- | --- |
-| **Mascota** | Nombre del asistente (la IA lo conoce), avatar, si pasea y mira al cursor, comentarios sobre tu uso del equipo y memoria. |
+| **Compañero** | Nombre del asistente (la IA lo conoce), avatar, si pasea y mira al cursor, comentarios sobre tu uso del equipo y memoria. |
 | **IA** | Proveedor, modelo, API key o dirección de Ollama. |
 | **Avisos** | Sonidos y volumen, avisos de batería. |
 | **Sistema** | Atajo de teclado, iniciar con Windows y qué aplicaciones puede abrir la IA. |
@@ -144,7 +143,7 @@ cargo run -p ryan --release
 
 El ejecutable queda en `target\release\ryan.exe` y puedes abrirlo con doble clic.
 
-Al arrancar aparece la mascota en una esquina del escritorio y un icono en la bandeja del sistema. Haz clic en la mascota, pulsa el atajo o usa el icono de la bandeja para abrir el chat. Solo se abre una copia a la vez. Para cerrarlo, usa el icono de la bandeja > **Salir**.
+Al arrancar aparece tu compañero en una esquina del escritorio y un icono en la bandeja del sistema. Haz clic en él, pulsa el atajo o usa el icono de la bandeja para abrir el chat. Solo se abre una copia a la vez. Para cerrarlo, usa el icono de la bandeja > **Salir**.
 
 ## Uso
 
@@ -229,7 +228,7 @@ Lo que escribes en el chat se envía al proveedor de IA que hayas elegido (con O
    }
    ```
 
-   `{n}` es el número sin ceros (1, 2…) y `{nn}` con dos cifras (01, 02…). Se compila de nuevo y aparece en *Ajustes > Mascota > Avatar*. El archivo explica además cómo darle una animación propia a cada estado.
+   `{n}` es el número sin ceros (1, 2…) y `{nn}` con dos cifras (01, 02…). Se compila de nuevo y aparece en *Ajustes > Compañero > Avatar*. El archivo explica además cómo darle una animación propia a cada estado.
 
 ### Añadir una herramienta
 
@@ -241,7 +240,7 @@ Cada herramienta implementa el trait `Tool` de `zen-core` (nombre, esquema de pa
 assets/            Sprites y manifiesto de personajes (assets/characters.json)
 crates/
   zen-core/        Núcleo: eventos, herramientas, permisos, ejecutor y bucle del asistente
-  zen-character/   Máquina de estados y comportamiento de la mascota
+  zen-character/   Máquina de estados y comportamiento del compañero
   zen-desktop/     Herramientas de Windows: archivos, apps, música, ventanas, sistema…
   zen-ai/          Proveedores de IA: Gemini, Claude, OpenAI y Ollama
 src-tauri/         Aplicación Tauri 2: ventanas, ajustes, bandeja, atajo y comandos

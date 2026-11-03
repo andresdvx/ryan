@@ -28,6 +28,15 @@
       "frames": 8,
       "preview_frame": 1,
       "speed": 0.8
+    },
+    {
+      "id": "pingu",
+      "name": "Pingu",
+      "folder": "pingu",
+      "pattern": "sprite_{nn}.png",
+      "frames": 12,
+      "preview_frame": 1,
+      "speed": 1.0
     }
   ]
 }

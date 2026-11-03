@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewWindow};
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use serde_json::{json, Value};
@@ -37,6 +37,10 @@ const MARGIN: i32 = 24;
 const PET_SIZE: f64 = 90.0;
 const CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(300);
 const CHAT_GAP: i32 = 8;
+const CHAT_MAX_SIZE: (f64, f64) = (620.0, 720.0);
+const CHAT_MIN_SIZE: (f64, f64) = (380.0, 460.0);
+const CHAT_WIDTH_RATIO: f64 = 0.32;
+const CHAT_HEIGHT_RATIO: f64 = 0.78;
 
 /// Coloca la mascota en la esquina inferior derecha del área de trabajo (sin tapar la barra de tareas).
 fn place_in_corner(window: &WebviewWindow) -> tauri::Result<()> {
@@ -50,12 +54,23 @@ fn place_in_corner(window: &WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Ajusta el tamaño del chat a la pantalla: ocupa una fracción del área de trabajo, sin pasar del tamaño
+/// pensado para un monitor grande ni encogerse hasta ser incómodo.
+fn fit_chat_to_monitor(chat: &WebviewWindow, area_width: u32, area_height: u32, scale: f64) -> tauri::Result<()> {
+    let logical_width = area_width as f64 / scale;
+    let logical_height = area_height as f64 / scale;
+    let width = (logical_width * CHAT_WIDTH_RATIO).clamp(CHAT_MIN_SIZE.0, CHAT_MAX_SIZE.0);
+    let height = (logical_height * CHAT_HEIGHT_RATIO).clamp(CHAT_MIN_SIZE.1, CHAT_MAX_SIZE.1);
+    chat.set_size(LogicalSize::new(width.round(), height.round()))
+}
+
 /// Coloca el chat encima de la mascota, alineado a su borde derecho y dentro del área de trabajo.
 fn place_chat_near_pet(pet: &WebviewWindow, chat: &WebviewWindow) -> tauri::Result<()> {
     let Some(monitor) = pet.current_monitor()? else {
         return Ok(());
     };
     let area = monitor.work_area();
+    fit_chat_to_monitor(chat, area.size.width, area.size.height, monitor.scale_factor())?;
     let pet_pos = pet.outer_position()?;
     let pet_size = pet.outer_size()?;
     let chat_size = chat.outer_size()?;
