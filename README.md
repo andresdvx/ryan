@@ -48,11 +48,11 @@ Trae siete personajes; puedes [añadir los tuyos](#añadir-un-personaje).
   <tr>
     <td align="center"><img src="assets/character/standing/character-1.png" alt="Zen" height="96"><br>Zarina</td>
     <td align="center"><img src="assets/poring/standing/sprite_04.png" alt="Poring" height="96"><br>Slime</td>
-    <td align="center"><img src="assets/fairy/sprite_01.png" alt="Fairy" height="96"><br>Paimon</td>
     <td align="center"><img src="assets/pingu/sprite_01.png" alt="Pingu" height="96"><br>Pingu</td>
     <td align="center"><img src="assets/bandit/sprite_01.png" alt="Bandit" height="96"><br>Bandit</td>
     <td align="center"><img src="assets/mochi/sprite_01.png" alt="Mochi" height="96"><br>Mochi</td>
     <td align="center"><img src="assets/ellie/sprite_01.png" alt="Ellie" height="96"><br>Ellie</td>
+    <td align="center"><img src="assets/drako/sprite_01.png" alt="Drako" height="96"><br>Drako</td>
   </tr>
 </table>
 
