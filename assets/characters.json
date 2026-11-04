@@ -29,18 +29,6 @@
       "speed": 1.4
     },
     {
-      "id": "fairy",
-      "accent": "#2fb9a8",
-      "accent2": "#6a8cff",
-      "headphones": { "x": 61, "y": 25, "width": 22 },
-      "name": "Fairy",
-      "folder": "fairy",
-      "pattern": "sprite_{nn}.png",
-      "frames": 8,
-      "preview_frame": 1,
-      "speed": 0.8
-    },
-    {
       "id": "pingu",
       "accent": "#3aa0f0",
       "accent2": "#5b6cf0",
@@ -130,6 +118,29 @@
         "surprised": { "sequence": [10, 4, 10, 1] },
         "interacting": { "sequence": [3, 5, 3, 7] },
         "alert": { "sequence": [10, 4, 10, 12] }
+      }
+    },
+    {
+      "id": "drako",
+      "name": "Drako",
+      "accent": "#3fb950",
+      "accent2": "#f0892e",
+      "headphones": { "x": 49, "y": 33, "width": 46 },
+      "folder": "drako",
+      "pattern": "sprite_{nn}.png",
+      "frames": 12,
+      "preview_frame": 1,
+      "speed": 1.0,
+      "states": {
+        "listening": { "sequence": [1, 9, 12, 11] },
+        "sleeping": { "sequence": [3, 4, 3, 4] },
+        "thinking": { "sequence": [1, 9, 10, 9, 1, 11] },
+        "working": { "sequence": [11, 12, 9, 12] },
+        "success": { "sequence": [7, 8, 7, 5] },
+        "happy": { "sequence": [7, 5, 6, 7] },
+        "surprised": { "sequence": [8, 6, 8, 1] },
+        "interacting": { "sequence": [7, 9, 7, 12] },
+        "alert": { "sequence": [8, 10, 8, 12] }
       }
     }
   ]
