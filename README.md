@@ -51,6 +51,10 @@ Está escrito en **Rust** con **Tauri 2**, y puede usar **Gemini, Claude, OpenAI
     <td align="center"><img src="docs/images/modos.png" alt="Modo Trabajo activo" width="300"><br><sub>Modos: Trabajo, Descanso, Concentración…</sub></td>
   </tr>
   <tr>
+    <td align="center"><img src="docs/images/detalle-herramienta.png" alt="Un mensaje de herramienta desplegado con su detalle" width="300"><br><sub>Cada “✔ Moví…” se despliega y muestra qué hizo</sub></td>
+    <td align="center"><img src="docs/images/actividad.png" alt="Pestaña Actividad con el registro de acciones" width="300"><br><sub>Actividad: lo que ha hecho Ryan, con deshacer</sub></td>
+  </tr>
+  <tr>
     <td align="center"><img src="docs/images/mirar-ventana.png" alt="Vista previa de la ventana antes de adjuntarla" width="300"><br><sub>Mirar una ventana: la ves antes de enviarla</sub></td>
     <td align="center"><img src="docs/images/editor-herramientas.png" alt="Editor de herramientas por categorías" width="300"><br><sub>Herramientas por categorías, con su nivel de riesgo</sub></td>
   </tr>
@@ -85,6 +89,7 @@ Trae siete personajes; puedes [añadir los tuyos](#añadir-un-personaje).
 | **Modos** | **Normal, Trabajo, Descanso y Concentración**: cambian a la vez cómo se comporta la mascota (paseos, comentarios, sonidos) y el tono de las respuestas, y los atajos de *Hoy*. Se aplican por encima de tus ajustes: al volver a Normal todo queda como lo tenías. |
 | **Hoy** | Una pestaña con lo importante de un vistazo: lo que suena (con controles), tus próximos recordatorios, batería, memoria y espacio en disco, tu última conversación y atajos para pedir cosas con un clic. |
 | **Historial** | Tus conversaciones se guardan en tu equipo. Puedes buscarlas (sin importar mayúsculas ni tildes), releerlas y **continuarlas**: Ryan recupera lo que hablasteis. Se puede apagar y borrar en cualquier momento. |
+| **Detalle y Actividad** | Cada mensaje “✔ Moví…” o “✖ …” del chat se **despliega** y enseña qué herramienta se usó, con qué datos, qué devolvió, cuándo, cuánto tardó y si confirmaste tú; con botones para mostrar el resultado en el Explorador, copiar la ruta o abrir la Papelera. La pestaña **Actividad** guarda ese registro (buscable, con filtros) y permite **deshacer** lo que se puede: mover, copiar, crear, comprimir, recordatorios… (siempre con la confirmación normal). Lo que escribes en otras apps o lees de un archivo no se guarda. |
 | **Archivos** | Crear, leer, buscar, mover, renombrar y **borrar enviando a la Papelera de Windows** (recuperable, nunca permanente). Copiar, comprimir y descomprimir `.zip`, y abrir carpetas o documentos. Organizar una carpeta por tipos y deshacerlo. Solo en Escritorio, Documentos y Descargas. |
 | **Espacio en disco** | Saber qué ocupa espacio: los archivos más grandes, el tamaño de cada carpeta y los **archivos duplicados**, con cuánto se liberaría. Solo mide; si quieres borrar, te pregunta qué conservar y lo envía a la Papelera. También puede vaciar la Papelera, con confirmación detallada porque no tiene vuelta atrás. |
 | **Programas y web** | Abrir las aplicaciones que tú permitas, abrir sitios web, buscar en internet con la búsqueda integrada de Gemini, Claude u OpenAI. |
@@ -247,6 +252,7 @@ Limitaciones con Ollama:
 | Ajustes (atajo, avatar, modelo elegido…) | `%APPDATA%\ZenPet\settings.json` |
 | Memoria, recordatorios y registro para deshacer | `%APPDATA%\ZenPet\` |
 | Historial de conversaciones (un archivo por conversación) | `%APPDATA%\ZenPet\conversations\` |
+| Registro de actividad (últimas 500 acciones) | `%APPDATA%\ZenPet\activity.json` |
 | API keys | Administrador de credenciales de Windows (`zen-pet`) |
 
 El historial guarda solo lo que se ve en el chat (tus mensajes y las respuestas), nunca imágenes ni claves: un mensaje que parece contener una contraseña o una clave no se guarda. Se puede apagar y borrar desde la pestaña *Historial*, se limita a las 200 conversaciones más recientes y no sale de tu equipo.

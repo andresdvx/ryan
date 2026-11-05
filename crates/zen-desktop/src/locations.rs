@@ -100,6 +100,29 @@ impl Locations {
     }
 }
 
+/// Dónde está algo dentro de las ubicaciones permitidas: la ubicación, la subcarpeta (si no está en la raíz) y su nombre.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Placed {
+    pub location: Location,
+    pub subfolder: Option<String>,
+    pub name: String,
+}
+
+impl Locations {
+    /// Traduce una ruta absoluta (existente o no) a ubicación + subcarpeta + nombre, o `None` si cae fuera de lo permitido.
+    pub fn locate(&self, path: &Path) -> Option<Placed> {
+        let resolved = resolve_leniently(path)?;
+        [Location::Desktop, Location::Documents, Location::Downloads].into_iter().find_map(|location| {
+            let root = self.root(location).canonicalize().ok()?;
+            let relative = resolved.strip_prefix(&root).ok()?;
+            let parts: Vec<String> = relative.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+            let (name, parents) = parts.split_last()?;
+            let subfolder = (!parents.is_empty()).then(|| parents.join("\\"));
+            Some(Placed { location, subfolder, name: name.clone() })
+        })
+    }
+}
+
 /// Ruta absoluta y sin enlaces aunque el final no exista: se resuelve el ancestro existente más
 /// cercano y se le añade lo que falta. Un `..` en la parte inexistente se rechaza.
 fn resolve_leniently(path: &Path) -> Option<PathBuf> {

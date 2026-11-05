@@ -14,7 +14,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use serde_json::{json, Value};
 use zen_ai::ProviderKind;
 use zen_core::ai::ToolInvocation;
-use zen_core::assistant::{Assistant, AssistantUi};
+use zen_core::assistant::{Assistant, AssistantUi, ToolReport};
 use zen_core::events::{Event, EventBus};
 use zen_core::executor::{PendingAction, ToolExecutor};
 use zen_core::tools::{RiskLevel, ToolRegistry};
@@ -330,6 +330,34 @@ impl AssistantUi for ChatUi {
         }
     }
 
+    /// Lo que hizo una herramienta: la línea del chat con su detalle desplegable, el historial y el registro de actividad.
+    fn say_tool(&self, text: &str, report: &ToolReport) {
+        record_chat(&self.app, zen_desktop::conversations::Role::Assistant, text);
+        let prepared = zen_desktop::activity::prepare(report);
+        let at = zen_desktop::unix_now();
+        // Con el historial apagado no se guarda nada (y sin entrada guardada no hay nada que deshacer).
+        let saved = if Settings::load().save_history {
+            match (self.app.try_state::<Arc<zen_desktop::activity::Activity>>(), self.app.try_state::<Arc<Locations>>()) {
+                (Some(store), Some(locations)) => {
+                    let undo = zen_desktop::activity::undo_for(&locations, report);
+                    store.record(report, undo, at).ok()
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let _ = self.app.emit(
+            "chat-tool",
+            json!({
+                "text": text, "id": saved.as_ref().map(|e| e.id), "tool": report.tool, "ok": report.ok, "summary": prepared.summary,
+                "args": prepared.args, "data": prepared.data, "duration_ms": report.duration_ms, "confirmed": report.confirmed, "at": at,
+                "undo": saved.as_ref().and_then(|e| e.undo.as_ref()).map(|u| u.label.clone()),
+            }),
+        );
+        let _ = self.app.emit("activity-changed", ());
+    }
+
     fn stream_text(&self, delta: &str) {
         self.streaming.store(true, std::sync::atomic::Ordering::SeqCst);
         let _ = self.app.emit("chat-stream", delta);
@@ -621,6 +649,80 @@ fn set_save_history(value: bool) -> Result<(), String> {
 #[tauri::command]
 fn get_system_status() -> Value {
     zen_desktop::system_status()
+}
+
+// ---------------------------------------------------------------------------------------------
+// Registro de actividad
+// ---------------------------------------------------------------------------------------------
+
+type ActivityStore<'a> = tauri::State<'a, Arc<zen_desktop::activity::Activity>>;
+
+fn activity_json(entry: &zen_desktop::activity::Entry) -> Value {
+    json!({
+        "id": entry.id, "at": entry.at, "tool": entry.tool, "ok": entry.ok, "summary": entry.summary, "args": entry.args, "data": entry.data,
+        "duration_ms": entry.duration_ms, "confirmed": entry.confirmed, "undone": entry.undone,
+        "undo": entry.undo.as_ref().map(|u| u.label.clone()),
+    })
+}
+
+/// Lo que ha hecho el asistente, lo más reciente primero. Antes de terminar el arranque no hay registro: lista vacía.
+#[tauri::command]
+fn list_activity(app: AppHandle) -> Vec<Value> {
+    app.try_state::<Arc<zen_desktop::activity::Activity>>().map(|store| store.list().iter().map(activity_json).collect()).unwrap_or_default()
+}
+
+/// Las únicas herramientas con las que se puede deshacer algo. El registro vive en un archivo: aunque alguien lo
+/// editara, deshacer nunca podría llamar a una herramienta distinta de estas (y todas piden confirmación como siempre).
+const UNDO_TOOLS: [&str; 5] = ["move_file", "delete_file", "undo_organize", "cancel_reminder", "forget"];
+
+/// Deshace una acción del registro llamando a la herramienta contraria por el camino de seguridad normal: la
+/// confirmación aparece en el chat. El resultado llega como un mensaje más y la entrada se marca como deshecha.
+#[tauri::command]
+fn undo_activity(app: AppHandle, store: ActivityStore, id: u64) -> Result<(), String> {
+    let entry = store.get(id).ok_or("Esa acción ya no está en el registro.")?;
+    if entry.undone {
+        return Err("Esa acción ya se deshizo.".into());
+    }
+    let undo = entry.undo.ok_or("Esa acción no se puede deshacer.")?;
+    if !UNDO_TOOLS.contains(&undo.tool.as_str()) {
+        return Err("Esa acción no se puede deshacer.".into());
+    }
+    std::thread::spawn(move || {
+        let call = ToolInvocation { id: None, name: undo.tool, args: undo.args };
+        let result = app.state::<Arc<Assistant>>().run_tool(&call, &ChatUi::new(app.clone()));
+        if matches!(result, zen_core::ai::Message::ToolResult { is_error: false, .. }) {
+            if let Some(store) = app.try_state::<Arc<zen_desktop::activity::Activity>>() {
+                store.mark_undone(id);
+            }
+            let _ = app.emit("activity-changed", ());
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_activity(store: ActivityStore) {
+    store.clear();
+}
+
+/// Muestra en el Explorador algo que hizo el asistente. Solo si está dentro de las carpetas permitidas y existe.
+#[tauri::command]
+fn show_in_explorer(locations: tauri::State<Arc<Locations>>, path: String) -> Result<(), String> {
+    let path = std::path::PathBuf::from(path);
+    if !path.exists() || !locations.contains(&path) {
+        return Err("Eso ya no está ahí.".into());
+    }
+    zen_desktop::reveal_in_explorer(&path).map_err(|error| format!("No pude abrir el Explorador: {error}"))
+}
+
+/// Abre la Papelera de Windows (para restaurar algo que se borró).
+#[tauri::command]
+fn open_recycle_bin() -> Result<(), String> {
+    std::process::Command::new("explorer.exe")
+        .arg("shell:RecycleBinFolder")
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("No pude abrir la Papelera: {error}"))
 }
 
 /// Recordatorios pendientes para la pestaña Recordatorios, del que vence antes al que vence después.
@@ -1168,6 +1270,11 @@ fn main() {
             hide_chat,
             submit_message,
             set_profile,
+            list_activity,
+            undo_activity,
+            clear_activity,
+            show_in_explorer,
+            open_recycle_bin,
             hide_quick_cmd,
             resize_quick,
             quick_submit,
@@ -1250,7 +1357,10 @@ fn main() {
             app.manage(Arc::new(zen_desktop::conversations::Conversations::open(data_dir.clone())));
             let memory = Arc::new(zen_desktop::Memory::open(data_dir.clone()));
             memory.set_enabled(settings.memory_enabled);
-            zen_desktop::register_default_tools(&mut registry, Arc::new(locations), data_dir, reminders.clone(), apps.clone(), memory.clone());
+            let locations = Arc::new(locations);
+            app.manage(locations.clone());
+            app.manage(Arc::new(zen_desktop::activity::Activity::open(data_dir.clone())));
+            zen_desktop::register_default_tools(&mut registry, locations, data_dir, reminders.clone(), apps.clone(), memory.clone());
             app.manage(memory);
             // Se lee el menú Inicio una vez al arrancar: así, cuando el usuario abre Ajustes, la lista ya está.
             #[cfg(debug_assertions)]

@@ -292,7 +292,8 @@ impl OpenPath {
     }
 }
 
-fn reveal_in_explorer(path: &Path) -> io::Result<()> {
+/// Abre el Explorador con ese elemento seleccionado.
+pub fn reveal_in_explorer(path: &Path) -> io::Result<()> {
     use std::os::windows::process::CommandExt;
     // `/select,` exige la ruta entre comillas y pegada; `raw_arg` evita que Rust la re-escape.
     std::process::Command::new("explorer.exe").raw_arg(format!("/select,\"{}\"", display_path(path))).spawn().map(|_| ())

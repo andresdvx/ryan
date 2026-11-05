@@ -147,6 +147,9 @@ listen("chat-final", (e) => {
 listen("chat-log", (e) => {
   if (waiting) note(e.payload, e.payload.startsWith("✖") || e.payload.startsWith("No pude"));
 });
+listen("chat-tool", (e) => {
+  if (waiting) note(e.payload.text, !e.payload.ok);
+});
 listen("chat-stream-abort", () => {
   streamEl?.remove();
   streamEl = null;

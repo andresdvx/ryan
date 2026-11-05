@@ -560,3 +560,44 @@ mark { padding: 0 2px; border-radius: 4px; background: rgb(var(--accent-rgb) / 0
 }
 .gear-btn:hover { background: rgb(var(--accent-rgb) / 0.18); border-color: rgb(var(--accent-rgb) / 0.55); transform: rotate(60deg); }
 .gear-btn.active { background: rgb(var(--accent-rgb) / 0.32); border-color: rgb(var(--accent-rgb) / 0.8); }
+
+/* --- Detalle de herramienta y pestaña Actividad --- */
+.msg.tool.fail { border-color: rgb(255 107 99 / 0.45); }
+.detail-toggle {
+  display: block; margin: 6px 0 0; padding: 0; border: 0; background: none;
+  color: var(--muted); font: inherit; font-size: 12px; cursor: pointer;
+}
+.detail-toggle:hover, .detail-toggle:focus-visible { color: var(--text); text-decoration: underline; }
+.tool-detail {
+  display: flex; flex-direction: column; gap: 10px; margin-top: 8px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: rgba(0, 0, 0, 0.22); font-size: 13px;
+}
+.tool-detail[hidden] { display: none; }
+.tool-heading { margin-bottom: 3px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.tool-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.kv dd.mono { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; }
+.tool-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tool-actions button { padding: 5px 10px; font-size: 12px; }
+.tool-status { font-size: 12px; color: var(--muted); }
+
+.acts { display: flex; flex-direction: column; gap: 8px; }
+.act { border: 1px solid var(--line); border-radius: 12px; background: var(--card); overflow: hidden; }
+.act.fail { border-color: rgb(255 107 99 / 0.45); }
+.act.undone { opacity: 0.65; }
+.act-head {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px;
+  border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.act-head:hover { background: rgb(var(--accent-rgb) / 0.1); }
+.act-icon { color: var(--ok); }
+.act.fail .act-icon { color: var(--danger); }
+.act-main { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.act-title { font-weight: 700; }
+.act-sub { overflow: hidden; font-size: 12px; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.act-side { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 11px; color: var(--muted); }
+.badge-undo, .badge-undone { padding: 1px 7px; border-radius: 999px; background: rgb(var(--accent-rgb) / 0.22); color: var(--text); }
+.badge-undone { background: rgba(255, 255, 255, 0.1); color: var(--muted); }
+.act .tool-detail { margin: 0 12px 12px; }

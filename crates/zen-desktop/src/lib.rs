@@ -1,3 +1,4 @@
+pub mod activity;
 mod app_catalog;
 mod applications;
 mod args;
@@ -46,7 +47,8 @@ use zen_core::tools::ToolRegistry;
 pub use app_catalog::{is_blocked as is_blocked_app, AppCatalog, BuiltinStatus, CustomApp, DiscoveredApp};
 pub use input_tools::TOOL_NAMES as COMPUTER_CONTROL_TOOLS;
 pub use clock::{describe_span, play_alert_sound, unix_now, LocalNow};
-pub use locations::{Location, Locations};
+pub use file_tools::reveal_in_explorer;
+pub use locations::{Location, Locations, Placed};
 pub use memory::Memory;
 pub use reminders::{Reminders, MAX_PENDING as MAX_REMINDERS};
 pub use screen_tools::{capturable_windows, capture_for_user, UserCapture};

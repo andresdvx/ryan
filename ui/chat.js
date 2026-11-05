@@ -424,7 +424,10 @@ function showConfirmation({ id, tool, preview, risk, detailed }) {
   card.append(title, body, actions);
   addToHistory(card);
 }
-window.__TAURI__.event.listen("confirmation-request", (e) => showConfirmation(e.payload));
+window.__TAURI__.event.listen("confirmation-request", (e) => {
+  showTab("chat");
+  showConfirmation(e.payload);
+});
 
 // Avatar de la cabecera: el personaje elegido (se actualiza al cambiarlo en Ajustes).
 const headerAvatar = document.getElementById("header-avatar");
@@ -507,6 +510,7 @@ const tabs = document.querySelectorAll(".tab");
 const views = {
   today: document.getElementById("view-today"),
   history: document.getElementById("view-history"),
+  activity: document.getElementById("view-activity"),
   chat: document.getElementById("view-chat"),
   reminders: document.getElementById("view-reminders"),
   settings: document.getElementById("view-settings"),
@@ -533,6 +537,7 @@ function showTab(name) {
   if (name === "today") openToday();
   else closeToday();
   if (name === "history") openHistory();
+  if (name === "activity") openActivity();
   if (name === "settings") loadSettings();
   else if (name === "chat") input.focus();
 }
@@ -2272,6 +2277,308 @@ historySave.addEventListener("change", async () => {
   }
   await loadSettings().catch(() => {});
   loadHistory();
+});
+
+// --- Detalle de lo que hace cada herramienta (en el chat y en la pestaña Actividad) ---
+const TOOL_LABELS = {
+  create_file: "Crear un archivo", create_folder: "Crear una carpeta", list_files: "Listar una carpeta", read_file: "Leer un archivo",
+  search_files: "Buscar archivos", move_file: "Mover o renombrar", copy_file: "Copiar", delete_file: "Enviar a la Papelera",
+  organize_folder: "Organizar una carpeta", undo_organize: "Deshacer la organización", open_path: "Abrir en el Explorador",
+  zip_files: "Comprimir en zip", unzip_file: "Descomprimir un zip", find_large_files: "Buscar archivos grandes",
+  folder_sizes: "Medir carpetas", find_duplicates: "Buscar duplicados", empty_recycle_bin: "Vaciar la Papelera",
+  play_music: "Reproducir música", search_music: "Buscar música", media_control: "Controlar la reproducción",
+  web_search: "Buscar en internet", open_website: "Abrir un sitio web", open_application: "Abrir una aplicación",
+  system_info: "Consultar el equipo", set_brightness: "Cambiar el brillo", read_clipboard: "Leer el portapapeles",
+  write_clipboard: "Escribir en el portapapeles", set_reminder: "Crear un recordatorio", list_reminders: "Listar recordatorios",
+  cancel_reminder: "Cancelar un recordatorio", remember: "Recordar algo", forget: "Olvidar algo", look_at_screen: "Mirar una ventana",
+  list_windows: "Listar ventanas", list_controls: "Listar controles", type_text: "Escribir en otra aplicación",
+  press_keys: "Pulsar teclas", click_control: "Pulsar un control",
+};
+const toolLabel = (name) => TOOL_LABELS[name] ?? humanToolName(name);
+
+const FIELD_LABELS = {
+  location: "Ubicación", subfolder: "Subcarpeta", name: "Nombre", to_location: "Ubicación de destino", to_subfolder: "Subcarpeta de destino",
+  new_name: "Nombre nuevo", zip_name: "Nombre del zip", folder_name: "Carpeta de destino", window: "Ventana", keys: "Teclas",
+  query: "Búsqueda", text: "Texto", min_mb: "Tamaño mínimo (MB)", min_kb: "Tamaño mínimo (KB)", max_results: "Máximo de resultados",
+  minutes: "Minutos", delay_seconds: "Espera (s)", at: "Hora", service: "Servicio", url: "Dirección", application: "Aplicación",
+  id: "Número", action: "Orden", name_contains: "Nombre contiene", path: "Ruta", from: "Origen", to: "Destino", zip: "Zip",
+  folder: "Carpeta", files: "Archivos", bytes: "Tamaño", total_matches: "Coincidencias", scanned: "Revisados",
+  wasted_bytes: "Espacio recuperable", original_bytes: "Tamaño original", zip_bytes: "Tamaño del zip", reveal: "Mostrar en el Explorador",
+  recycled: "En la Papelera", title: "Título", artist: "Artista", playing: "Sonando", characters: "Caracteres", program: "Programa",
+  when: "Cuándo", total_bytes: "Total",
+};
+const PLACE_NAMES = { desktop: "Escritorio", documents: "Documentos", downloads: "Descargas" };
+const fieldLabel = (key) => FIELD_LABELS[key] ?? humanToolName(key);
+
+function formatBytes(bytes) {
+  if (bytes >= 2 ** 30) return `${(bytes / 2 ** 30).toFixed(1).replace(".", ",")} GB`;
+  if (bytes >= 2 ** 20) return `${Math.round(bytes / 2 ** 20)} MB`;
+  return `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
+}
+
+function fieldValue(key, value) {
+  if (value === true) return "Sí";
+  if (value === false) return "No";
+  if (typeof value === "number") return key.endsWith("bytes") ? formatBytes(value) : String(value);
+  if (typeof value === "string") return key.endsWith("location") ? (PLACE_NAMES[value] ?? value) : value;
+  return String(value);
+}
+
+// Una lista de «campo: valor». Los valores simples van en su fila; las listas, como «N elementos» y sus primeros elementos.
+function detailRows(object) {
+  const list = document.createElement("dl");
+  list.className = "kv";
+  const add = (label, value, mono = false) => {
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    if (mono) dd.className = "mono";
+    list.append(dt, dd);
+  };
+  for (const [key, value] of Object.entries(object ?? {})) {
+    if (value === null || value === undefined) continue;
+    if (Array.isArray(value)) {
+      if (!value.length) continue;
+      const lines = value.slice(0, 8).map((item) => (typeof item === "object" ? JSON.stringify(item) : String(item)));
+      add(fieldLabel(key), `${value.length} elementos\n${lines.join("\n")}${value.length > 8 ? "\n…" : ""}`, true);
+    } else if (typeof value === "object") {
+      add(fieldLabel(key), JSON.stringify(value), true);
+    } else {
+      add(fieldLabel(key), fieldValue(key, value), typeof value === "string" && /^[a-z]:/i.test(value));
+    }
+  }
+  return list.children.length ? list : null;
+}
+
+// La ruta que tiene sentido enseñar en el Explorador (lo que la acción creó o dejó): nunca el origen de algo movido.
+function primaryPath(p) {
+  if (p.tool === "delete_file" || !p.ok) return null;
+  for (const key of ["to", "zip", "folder", "path"]) {
+    const value = p.data?.[key];
+    if (typeof value === "string" && /^[a-z]:/i.test(value)) return value;
+  }
+  return null;
+}
+
+function toolSection(title, content) {
+  const section = document.createElement("div");
+  section.className = "tool-section";
+  const heading = document.createElement("div");
+  heading.className = "tool-heading";
+  heading.textContent = title;
+  section.append(heading, content);
+  return section;
+}
+
+function plainBlock(text) {
+  const el = document.createElement("div");
+  el.className = "tool-text";
+  el.textContent = text;
+  return el;
+}
+
+function toolActions(p) {
+  const actions = document.createElement("div");
+  actions.className = "tool-actions";
+  const status = document.createElement("span");
+  status.className = "tool-status";
+  const button = (label, onClick, secondary = true) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    if (secondary) b.className = "secondary";
+    b.addEventListener("click", onClick);
+    actions.append(b);
+    return b;
+  };
+  const path = primaryPath(p);
+  if (path) {
+    button("Mostrar en el Explorador", async () => {
+      try {
+        await invoke("show_in_explorer", { path });
+        status.textContent = "";
+      } catch (error) {
+        status.textContent = String(error);
+      }
+    });
+    const copy = button("Copiar ruta", async () => {
+      await copyText(path);
+      copy.textContent = "Copiada ✓";
+      setTimeout(() => (copy.textContent = "Copiar ruta"), 1400);
+    });
+  }
+  if (p.tool === "delete_file" && p.ok) {
+    button("Abrir la Papelera", () => invoke("open_recycle_bin").catch((error) => (status.textContent = String(error))));
+  }
+  if (p.undone) {
+    status.textContent = "Ya se deshizo.";
+  } else if (p.undo && p.id) {
+    const undo = button(`Deshacer: ${p.undo}`, async () => {
+      undo.disabled = true;
+      try {
+        await invoke("undo_activity", { id: p.id });
+        status.textContent = "Te pido confirmación en el chat…";
+      } catch (error) {
+        status.textContent = String(error);
+        undo.disabled = false;
+      }
+    }, false);
+  }
+  if (status.textContent || actions.children.length) actions.append(status);
+  return actions.children.length ? actions : null;
+}
+
+// El detalle completo de una acción: qué herramienta, qué se le pidió, qué devolvió, cuándo y cuánto tardó.
+function toolDetail(p) {
+  const box = document.createElement("div");
+  box.className = "tool-detail";
+  box.append(toolSection("Herramienta", plainBlock(`${toolLabel(p.tool)} (${p.tool})`)));
+  const args = detailRows(p.args);
+  box.append(toolSection("Qué se le pidió", args ?? plainBlock("Nada en particular.")));
+  box.append(toolSection(p.ok ? "Resultado" : "Qué falló", plainBlock(p.summary || "—")));
+  const data = detailRows(p.data);
+  if (data) box.append(toolSection("Datos", data));
+  const when = new Date(p.at * 1000).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const took = p.duration_ms < 1000 ? `${p.duration_ms} ms` : `${(p.duration_ms / 1000).toFixed(1).replace(".", ",")} s`;
+  box.append(toolSection("Cuándo", plainBlock(`${when} · tardó ${took} · ${p.confirmed ? "confirmaste esta acción" : "no necesitó tu permiso"}`)));
+  const actions = toolActions(p);
+  if (actions) box.append(actions);
+  return box;
+}
+
+// Un mensaje «✔ Moví X» que se despliega para ver qué se hizo exactamente.
+function buildToolMessage(p) {
+  const firstLine = p.text.split("\n")[0];
+  const el = buildMessage("assistant", firstLine, p.at);
+  el.classList.add("tool", p.ok ? "ok" : "fail");
+  const detail = toolDetail(p);
+  detail.hidden = true;
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "detail-toggle";
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.textContent = "Ver detalle ▾";
+  toggle.addEventListener("click", () => {
+    const opening = detail.hidden;
+    detail.hidden = !opening;
+    toggle.setAttribute("aria-expanded", String(opening));
+    toggle.textContent = opening ? "Ocultar detalle ▴" : "Ver detalle ▾";
+    history.scrollTop = history.scrollHeight;
+  });
+  const anchor = el.querySelector(".copy");
+  el.insertBefore(toggle, anchor);
+  el.insertBefore(detail, anchor);
+  return el;
+}
+window.__TAURI__.event.listen("chat-tool", (e) => addToHistory(buildToolMessage(e.payload)));
+
+// --- Pestaña Actividad ---
+const activityList = document.getElementById("activity-list");
+const activityEmpty = document.getElementById("activity-empty");
+const activitySearch = document.getElementById("activity-search");
+const activityCount = document.getElementById("activity-count");
+const activityClear = document.getElementById("activity-clear");
+const activityMessage = document.getElementById("activity-message");
+const activityFilters = document.getElementById("activity-filters");
+let activityData = [];
+let activityFilter = "all";
+
+function activityCard(entry) {
+  const payload = { ...entry, undo: entry.undone ? null : entry.undo };
+  const card = document.createElement("div");
+  card.className = `act ${entry.ok ? "ok" : "fail"}${entry.undone ? " undone" : ""}`;
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "act-head";
+  head.setAttribute("aria-expanded", "false");
+  const icon = document.createElement("span");
+  icon.className = "act-icon";
+  icon.textContent = entry.ok ? "✔" : "✖";
+  const main = document.createElement("span");
+  main.className = "act-main";
+  const title = document.createElement("span");
+  title.className = "act-title";
+  title.textContent = toolLabel(entry.tool);
+  const sub = document.createElement("span");
+  sub.className = "act-sub";
+  sub.textContent = entry.summary.split("\n")[0];
+  main.append(title, sub);
+  const side = document.createElement("span");
+  side.className = "act-side";
+  const time = document.createElement("span");
+  time.className = "act-time";
+  time.textContent = pastLabel(entry.at);
+  side.append(time);
+  if (entry.undone) {
+    const badge = document.createElement("span");
+    badge.className = "badge-undone";
+    badge.textContent = "Deshecho";
+    side.append(badge);
+  } else if (entry.undo) {
+    const badge = document.createElement("span");
+    badge.className = "badge-undo";
+    badge.textContent = "Se puede deshacer";
+    side.append(badge);
+  }
+  head.append(icon, main, side);
+  const detail = toolDetail(payload);
+  detail.hidden = true;
+  head.addEventListener("click", () => {
+    detail.hidden = !detail.hidden;
+    head.setAttribute("aria-expanded", String(!detail.hidden));
+  });
+  card.append(head, detail);
+  return card;
+}
+
+function renderActivity() {
+  const needle = activitySearch.value.trim().toLowerCase();
+  const shown = activityData.filter((entry) => {
+    if (activityFilter === "undo" && !(entry.undo && !entry.undone)) return false;
+    if (activityFilter === "failed" && entry.ok) return false;
+    return !needle || toolLabel(entry.tool).toLowerCase().includes(needle) || entry.summary.toLowerCase().includes(needle);
+  });
+  activityCount.textContent = activityData.length ? String(activityData.length) : "";
+  activityList.replaceChildren(...shown.map(activityCard));
+  activityEmpty.hidden = shown.length > 0;
+  if (!shown.length) {
+    activityEmpty.textContent = activityData.length
+      ? "Nada coincide con ese filtro."
+      : settings?.save_history === false
+        ? "El historial está apagado, así que no se guarda la actividad."
+        : "Todavía no ha hecho nada. Cuando Ryan mueva, copie o cree algo, aparecerá aquí.";
+  }
+}
+
+async function loadActivity() {
+  try {
+    activityData = await invoke("list_activity");
+  } catch {
+    activityData = [];
+  }
+  renderActivity();
+}
+
+function openActivity() {
+  loadActivity();
+}
+
+activitySearch.addEventListener("input", renderActivity);
+activityFilters.addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-filter]");
+  if (!chip) return;
+  activityFilter = chip.dataset.filter;
+  for (const other of activityFilters.children) other.setAttribute("aria-checked", String(other === chip));
+  renderActivity();
+});
+armed(activityClear, "Borrar el registro", async () => {
+  await invoke("clear_activity").catch(() => {});
+  setMessage(activityMessage, "Registro borrado.", "ok");
+  loadActivity();
+});
+window.__TAURI__.event.listen("activity-changed", () => {
+  if (currentTab === "activity") loadActivity();
 });
 
 // Al arrancar, la página puede cargar antes de que la aplicación termine de prepararse: se reintenta unos segundos.

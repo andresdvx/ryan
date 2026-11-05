@@ -26,7 +26,8 @@
     <button class="tab active" role="tab" data-tab="chat" aria-selected="true" title="Charla">💬 <span class="tab-label">Charla</span></button>
     <button class="tab" role="tab" data-tab="today" aria-selected="false" title="Hoy">🏠 <span class="tab-label">Hoy</span></button>
     <button class="tab" role="tab" data-tab="reminders" aria-selected="false" title="Recordatorios">⏰ <span class="tab-label">Recordatorios</span> <span id="reminder-badge" class="count" hidden></span></button>
-    <button class="tab" role="tab" data-tab="history" aria-selected="false" title="Historial">🕘 <span class="tab-label">Historial</span></button></nav>
+    <button class="tab" role="tab" data-tab="history" aria-selected="false" title="Historial">🕘 <span class="tab-label">Historial</span></button>
+    <button class="tab" role="tab" data-tab="activity" aria-selected="false" title="Actividad">🧾 <span class="tab-label">Actividad</span></button></nav>
 
   <div id="view-chat" class="view">
     <main id="history"></main>
@@ -126,6 +127,27 @@
           <h3>Atajos</h3>
           <div id="today-shortcuts" class="shortcuts"></div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-activity" class="view" hidden>
+    <div class="panels">
+      <div class="panel">
+        <div class="card field">
+          <h3>Lo que ha hecho Ryan <span id="activity-count" class="count"></span></h3>
+          <p class="hint">Cada acción con su detalle. Se guarda solo en este equipo y sin contenido privado (lo que escribes en otras apps o lees de un archivo no se guarda). Donde se puede, tienes un botón para deshacerla.</p>
+          <input id="activity-search" type="search" placeholder="Buscar en la actividad…" spellcheck="false" autocomplete="off" aria-label="Buscar en la actividad">
+          <div id="activity-filters" class="profile-chips" role="radiogroup" aria-label="Filtro">
+            <button type="button" class="profile-chip" role="radio" data-filter="all" aria-checked="true">Todo</button>
+            <button type="button" class="profile-chip" role="radio" data-filter="undo" aria-checked="false">Se puede deshacer</button>
+            <button type="button" class="profile-chip" role="radio" data-filter="failed" aria-checked="false">Con problemas</button>
+          </div>
+          <div class="row"><button type="button" id="activity-clear" class="secondary">Borrar el registro</button></div>
+          <div id="activity-message" class="message" role="status"></div>
+        </div>
+        <div id="activity-list" class="acts"></div>
+        <p id="activity-empty" class="hint empty" hidden></p>
       </div>
     </div>
   </section>
