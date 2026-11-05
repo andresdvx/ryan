@@ -470,7 +470,9 @@ function playFriend(state) {
   headerAvatar.src = friendFrames[0].src;
   // Dormido o en reposo basta con un solo cuadro si no hay nada más que mover.
   if (friendFrames.length < 2) return;
-  const ms = (FRAME_MS[state] ?? FRAME_MS.idle) * (friend.entry.speed ?? 1) * HEADER_SLOWDOWN;
+  const spec = friend.entry.states?.[state];
+  const base = Number.isFinite(spec?.ms) && spec.ms >= 20 ? spec.ms : (FRAME_MS[state] ?? FRAME_MS.idle);
+  const ms = base * (friend.entry.speed ?? 1) * HEADER_SLOWDOWN;
   friendTimer = setInterval(() => {
     friendIndex = (friendIndex + 1) % friendFrames.length;
     headerAvatar.src = friendFrames[friendIndex].src;

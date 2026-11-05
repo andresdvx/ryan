@@ -430,7 +430,7 @@ mod tests {
         settings.confirm_all = true;
         settings.wander = false;
         settings.look_at_cursor = false;
-        settings.character = "poring".into();
+        settings.character = "drako".into();
         settings.assistant_name = "Kiko".into();
         settings.sound_enabled = false;
         settings.sound_volume = 73;

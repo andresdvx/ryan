@@ -60,8 +60,8 @@ mod tests {
         let catalog = catalog();
         assert!(catalog.characters.len() >= 2);
         assert!(is_known(default_id()));
-        assert!(is_known("poring") && is_known("zen") && is_known("drako") && !is_known("fairy"));
-        assert!(!is_known("") && !is_known("../zen") && !is_known("Poring"), "los identificadores son exactos");
+        assert!(is_known("peter_panda") && is_known("drako") && !is_known("zen") && !is_known("poring") && !is_known("fairy"));
+        assert!(!is_known("") && !is_known("../drako") && !is_known("Drako"), "los identificadores son exactos");
     }
 
     #[test]
@@ -106,6 +106,23 @@ mod tests {
                 assert!(assets_dir().join("headphones").join(format!("{id}.png")).is_file(), "{id}: falta assets/headphones/{id}.png");
             }
             for (state, spec) in entry["states"].as_object().into_iter().flatten() {
+                if let Some(ms) = spec.get("ms") {
+                    assert!(ms.as_u64().is_some_and(|ms| (20..=3000).contains(&ms)), "{id}/{state}: «ms» debe ser un entero entre 20 y 3000");
+                }
+                // Una animación de estado con carpeta propia (la que crea tools/import_sprites.py) debe tener todos sus archivos.
+                if spec.get("sequence").is_none() {
+                    let state_folder = spec["folder"].as_str().unwrap_or_else(|| panic!("{id}/{state}: falta «folder» o «sequence»"));
+                    let state_pattern = spec["pattern"].as_str().unwrap_or_else(|| panic!("{id}/{state}: falta «pattern»"));
+                    let state_frames = spec["frames"].as_u64().unwrap_or(0);
+                    assert!(!state_folder.contains("..") && !state_folder.starts_with('/') && !state_folder.contains(':'), "{id}/{state}: carpeta insegura");
+                    assert!(state_pattern.contains("{n}") || state_pattern.contains("{nn}"), "{id}/{state}: el patrón no numera los frames");
+                    assert!(state_frames >= 1, "{id}/{state}: sin frames");
+                    for n in 1..=state_frames {
+                        let name = state_pattern.replace("{nn}", &format!("{n:02}")).replace("{n}", &n.to_string());
+                        let path = assets_dir().join(state_folder).join(&name);
+                        assert!(path.is_file(), "{id}/{state}: falta el frame {n}: {}", path.display());
+                    }
+                }
                 // Una animación de estado sin carpeta propia reutiliza los frames del personaje.
                 if let Some(sequence) = spec["sequence"].as_array() {
                     assert!(!sequence.is_empty(), "{id}/{state}: secuencia vacía");

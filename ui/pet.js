@@ -13,6 +13,9 @@ let character = null;
 let frames = [];
 // Animaciones propias de un estado (opcionales, ver «states» en characters.json); si faltan se usa «standing».
 let stateSets = {};
+// Ritmo propio de una animación («ms» en el manifiesto, milisegundos por frame) y cuáles traen frames dibujados aparte.
+let stateMs = {};
+let ownStates = new Set();
 let baseFrames = [];
 let frame = 0;
 let frameTimer = null;
@@ -39,7 +42,10 @@ function playAnimation(state) {
     frame = 0;
     sprite.src = frames[0].src;
   }
-  const ms = (FRAME_MS[key] ?? FRAME_MS.idle) * (character.speed ?? 1);
+  // Con frames dibujados aparte (un ciclo de paso real, por ejemplo) se quita el balanceo por código: se sumaría al dibujo.
+  if (own?.length && ownStates.has(key)) pet.dataset.own = "1";
+  else delete pet.dataset.own;
+  const ms = (stateMs[key] ?? FRAME_MS[key] ?? FRAME_MS.idle) * (character.speed ?? 1);
   frameTimer = setInterval(() => {
     frame = (frame + 1) % frames.length;
     sprite.src = frames[frame].src;
@@ -103,6 +109,13 @@ async function useCharacter(id) {
   placePhones(entry);
   baseFrames = images;
   stateSets = sets;
+  stateMs = {};
+  ownStates = new Set();
+  for (const [state, spec] of Object.entries(entry.states ?? {})) {
+    if (!sets[state]) continue;
+    if (Number.isFinite(spec.ms) && spec.ms >= 20) stateMs[state] = spec.ms;
+    if (!Array.isArray(spec.sequence)) ownStates.add(state);
+  }
   frames = images;
   frame = 0;
   sprite.src = frames[0].src;

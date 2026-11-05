@@ -70,6 +70,9 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #pet[data-state="success"] { animation: bounce 0.5s ease-out 2; }
 #pet.bounce { animation: bounce 0.5s ease-out; }
 
+/* Un estado con frames dibujados aparte ya trae su propio movimiento: no se le añade el balanceo por código. */
+#pet[data-own="1"] #rig { animation: none; }
+
 @keyframes breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.015, 0.975); } }
 @keyframes zzz { 0%, 100% { transform: translateY(1px) scale(0.85); opacity: 0.6; } 50% { transform: translateY(-3px) scale(1.1); opacity: 1; } }
 @keyframes step { 0%, 100% { transform: translateY(0) rotate(-3deg); } 25% { transform: translateY(-3px) rotate(0); } 50% { transform: translateY(0) rotate(3deg); } 75% { transform: translateY(-3px) rotate(0); } }
