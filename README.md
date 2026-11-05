@@ -38,6 +38,18 @@ Está escrito en **Rust** con **Tauri 2**, y puede usar **Gemini, Claude, OpenAI
     <td align="center"><img src="docs/images/pet.png" alt="Ajustes del compañero" width="300"><br><sub>Nombre, avatar, comportamiento y memoria</sub></td>
     <td align="center"><img src="docs/images/security.png" alt="Ajustes de seguridad" width="300"><br><sub>Tú decides qué herramientas puede usar la IA</sub></td>
   </tr>
+  <tr>
+    <td align="center"><img src="docs/images/recordatorios.png" alt="Pestaña de recordatorios programados" width="300"><br><sub>Todos tus recordatorios, con cuenta atrás</sub></td>
+    <td align="center"><img src="docs/images/modelo.png" alt="Selector de proveedor y modelo en la cabecera" width="300"><br><sub>Cambia de proveedor o de modelo desde la cabecera</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/comandos.png" alt="Paleta de comandos al escribir una barra" width="300"><br><sub>Escribe <code>/</code> y elige un comando</sub></td>
+    <td align="center"><img src="docs/images/historial.png" alt="Historial de conversaciones con búsqueda" width="300"><br><sub>Historial: busca y retoma conversaciones</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/hoy.png" alt="Pestaña Hoy con el resumen del día" width="300"><br><sub>Hoy: música, recordatorios y estado del equipo</sub></td>
+    <td></td>
+  </tr>
 </table>
 
 ### Personajes
@@ -61,10 +73,14 @@ Trae siete personajes; puedes [añadir los tuyos](#añadir-un-personaje).
 | Área | Ejemplos |
 | --- | --- |
 | **Personaje** | Se anima según lo que hace (reposo, pensando, trabajando, contenta…), pasea por el escritorio, mira hacia el cursor, avisa con la batería baja y sugiere descansos. Su tono cambia con la hora, la batería y cuánto llevas trabajando, y reacciona cuando termina una descarga, conectas una memoria USB o se acerca un recordatorio. |
-| **Archivos** | Crear, leer, buscar, mover, renombrar y **borrar enviando a la Papelera de Windows** (recuperable, nunca permanente). Organizar una carpeta por tipos y deshacerlo. Solo en Escritorio, Documentos y Descargas. |
+| **Chat** | Las respuestas se escriben en directo (con Ollama), una paleta de comandos al escribir `/`, y un selector de proveedor y modelo en la cabecera. |
+| **Hoy** | Una pestaña con lo importante de un vistazo: lo que suena (con controles), tus próximos recordatorios, batería, memoria y espacio en disco, tu última conversación y atajos para pedir cosas con un clic. |
+| **Historial** | Tus conversaciones se guardan en tu equipo. Puedes buscarlas (sin importar mayúsculas ni tildes), releerlas y **continuarlas**: Ryan recupera lo que hablasteis. Se puede apagar y borrar en cualquier momento. |
+| **Archivos** | Crear, leer, buscar, mover, renombrar y **borrar enviando a la Papelera de Windows** (recuperable, nunca permanente). Copiar, comprimir y descomprimir `.zip`, y abrir carpetas o documentos. Organizar una carpeta por tipos y deshacerlo. Solo en Escritorio, Documentos y Descargas. |
+| **Espacio en disco** | Saber qué ocupa espacio: los archivos más grandes, el tamaño de cada carpeta y los **archivos duplicados**, con cuánto se liberaría. Solo mide; si quieres borrar, te pregunta qué conservar y lo envía a la Papelera. También puede vaciar la Papelera, con confirmación detallada porque no tiene vuelta atrás. |
 | **Programas y web** | Abrir las aplicaciones que tú permitas, abrir sitios web, buscar en internet con la búsqueda integrada de Gemini, Claude u OpenAI. |
 | **Música y vídeo** | Reproducir una canción en la **app de escritorio de Spotify**, en YouTube Music o en YouTube. Reproductor en el chat con pausa, anterior y siguiente para lo que suene en Windows. |
-| **Sistema** | Información del equipo (batería, memoria…), brillo, portapapeles, recordatorios con aviso sonoro. |
+| **Sistema** | Información del equipo (batería, memoria…), brillo, portapapeles, recordatorios con aviso sonoro. Una pestaña **Recordatorios** los lista con su cuenta atrás y permite crearlos y cancelarlos a mano. |
 | **Memoria** | Recuerda lo que le pidas ("recuerda que me llamo Ana") entre sesiones. Nunca guarda contraseñas, claves ni datos de tarjetas. |
 | **Ver la pantalla** | Con un modelo con visión (de momento, en Ollama) puede mirar **una ventana** y explicar lo que muestra, por ejemplo un mensaje de error. |
 | **Control de otras apps** *(apagado por defecto)* | Escribir, pulsar teclas y pulsar botones en otras ventanas, con confirmación en cada acción. |
@@ -165,6 +181,9 @@ Abre el chat y escribe con naturalidad. Algunos ejemplos:
 - "Crea una carpeta llamada Fotos en el escritorio."
 - "Organiza mi carpeta de Descargas." / "Deshaz la última organización."
 - "Borra la carpeta Pruebas del escritorio." *(te pedirá confirmación y la enviará a la Papelera)*
+- "¿Qué ocupa más espacio en mis Descargas?" / "Busca archivos duplicados en el escritorio."
+- "Comprime la carpeta Proyecto en un zip." / "Descomprime el zip de Descargas."
+- "Haz una copia del informe." / "Abre la carpeta Descargas."
 - "Recuérdame estirar las piernas en 30 minutos."
 - "¿Qué noticias hay hoy sobre…?"
 - "Recuerda que mi comida favorita es la pizza."
@@ -175,6 +194,7 @@ Comandos del chat:
 | Comando | Qué hace |
 | --- | --- |
 | `/new` | Empieza una conversación nueva. |
+| `/modelo` | Abre el selector de proveedor y modelo de la cabecera. |
 | `/tools` | Lista las herramientas disponibles. |
 | `/key TU_CLAVE` | Guarda la API key del proveedor activo. |
 | `/forget` | Borra la API key guardada del proveedor activo. |
@@ -209,6 +229,7 @@ Limitaciones con Ollama:
 - Los modelos pequeños se equivocan más al elegir herramientas que Gemini, Claude u OpenAI.
 - `deepseek-r1` en su versión base no admite herramientas, así que Ollama lo rechaza.
 - La primera respuesta tarda más porque el modelo se carga en memoria.
+- Los modelos con razonamiento (Qwen3, Qwen3.5…) piensan en silencio antes de escribir, y eso puede tardar decenas de segundos. Por eso está **desactivado por defecto**: con `qwen3.5:9b` el primer texto aparece en unos 2 s en lugar de unos 30 s. Puedes activarlo en *Ajustes > IA* o en el selector de modelo de la cabecera si prefieres respuestas más meditadas.
 
 ## Dónde se guardan tus datos
 
@@ -216,7 +237,10 @@ Limitaciones con Ollama:
 | --- | --- |
 | Ajustes (atajo, avatar, modelo elegido…) | `%APPDATA%\ZenPet\settings.json` |
 | Memoria, recordatorios y registro para deshacer | `%APPDATA%\ZenPet\` |
+| Historial de conversaciones (un archivo por conversación) | `%APPDATA%\ZenPet\conversations\` |
 | API keys | Administrador de credenciales de Windows (`zen-pet`) |
+
+El historial guarda solo lo que se ve en el chat (tus mensajes y las respuestas), nunca imágenes ni claves: un mensaje que parece contener una contraseña o una clave no se guarda. Se puede apagar y borrar desde la pestaña *Historial*, se limita a las 200 conversaciones más recientes y no sale de tu equipo.
 
 Lo que escribes en el chat se envía al proveedor de IA que hayas elegido (con Ollama no sale de tu equipo). Una captura de ventana solo se envía cuando confirmas cada vez, no se guarda en disco y solo se conserva la más reciente durante la conversación.
 

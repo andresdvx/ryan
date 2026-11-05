@@ -182,11 +182,41 @@ fn risk_name(risk: RiskLevel) -> &'static str {
 /// Puente entre el asistente y el chat.
 struct ChatUi {
     app: AppHandle,
+    /// Hay una respuesta en directo a medias: el siguiente `say` la completa en vez de añadir otro mensaje.
+    streaming: std::sync::atomic::AtomicBool,
+}
+
+impl ChatUi {
+    fn new(app: AppHandle) -> Self {
+        Self { app, streaming: std::sync::atomic::AtomicBool::new(false) }
+    }
+
+    /// ¿Había una respuesta en directo abierta? (y la deja cerrada)
+    fn take_streaming(&self) -> bool {
+        self.streaming.swap(false, std::sync::atomic::Ordering::SeqCst)
+    }
 }
 
 impl AssistantUi for ChatUi {
     fn say(&self, text: &str) {
-        say(&self.app, text);
+        record_chat(&self.app, zen_desktop::conversations::Role::Assistant, text);
+        if self.take_streaming() {
+            // El mensaje completo sustituye al que se fue escribiendo (ahora ya con formato).
+            let _ = self.app.emit("chat-final", text);
+        } else {
+            say(&self.app, text);
+        }
+    }
+
+    fn stream_text(&self, delta: &str) {
+        self.streaming.store(true, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.app.emit("chat-stream", delta);
+    }
+
+    fn stream_abort(&self) {
+        if self.take_streaming() {
+            let _ = self.app.emit("chat-stream-abort", ());
+        }
     }
 
     fn confirm(&self, action: &PendingAction) -> bool {
@@ -247,7 +277,8 @@ impl AssistantUi for ChatUi {
 fn make_provider(settings: &Settings) -> Option<Box<dyn zen_core::ai::LlmProvider>> {
     let kind = settings.provider;
     let api_key = if kind.needs_key() { secrets::api_key(kind)? } else { String::new() };
-    Some(kind.create(api_key, settings.model(kind), &settings.ollama_url))
+    let local = zen_ai::OllamaSettings { url: settings.ollama_url.clone(), think: settings.ollama_think };
+    Some(kind.create(api_key, settings.model(kind), &local))
 }
 
 fn handle_key_command(app: &AppHandle, key: &str) {
@@ -277,7 +308,7 @@ fn handle_tool_command(app: &AppHandle, rest: &str) {
     match serde_json::from_str::<Value>(json_text) {
         Ok(args) => {
             let call = ToolInvocation { id: None, name: name.to_string(), args };
-            assistant.run_tool(&call, &ChatUi { app: app.clone() });
+            assistant.run_tool(&call, &ChatUi::new(app.clone()));
         }
         Err(error) => {
             say(app, format!("El JSON de los argumentos no es válido: {error}"));
@@ -310,6 +341,10 @@ fn handle_chat_text(app: &AppHandle, text: &str) {
 
     if text == "/new" {
         app.state::<Arc<Assistant>>().clear_history();
+        // Lo que se escriba a partir de ahora va a una conversación nueva del historial.
+        if let Some(store) = app.try_state::<Arc<zen_desktop::conversations::Conversations>>() {
+            store.start_new();
+        }
         say(app, "Empecemos de cero: olvidé la conversación anterior.");
         return;
     }
@@ -335,12 +370,119 @@ fn handle_chat_text(app: &AppHandle, text: &str) {
         publish(app, Event::AssistantReplied);
         return;
     };
+    // Un mensaje que parece llevar una contraseña o una clave no se guarda en el historial.
+    let stored = if zen_desktop::memory::looks_sensitive(text) {
+        "🔒 Mensaje no guardado en el historial: parecía contener una contraseña o una clave."
+    } else {
+        text
+    };
+    record_chat(app, zen_desktop::conversations::Role::User, stored);
     app.state::<Arc<Assistant>>()
-        .handle_user_message(provider.as_ref(), &ChatUi { app: app.clone() }, text);
+        .handle_user_message(provider.as_ref(), &ChatUi::new(app.clone()), text);
 }
+
+/// Guarda en el historial lo que se ve en el chat, si el usuario no lo apagó en Ajustes.
+fn record_chat(app: &AppHandle, role: zen_desktop::conversations::Role, text: &str) {
+    if !Settings::load().save_history {
+        return;
+    }
+    if let Some(store) = app.try_state::<Arc<zen_desktop::conversations::Conversations>>() {
+        let _ = store.record(role, text);
+    }
+}
+
 #[tauri::command]
 fn submit_message(app: AppHandle, text: String) {
     std::thread::spawn(move || handle_chat_text(&app, &text));
+}
+
+type Store<'a> = tauri::State<'a, Arc<zen_desktop::conversations::Conversations>>;
+
+fn summary_json(s: &zen_desktop::conversations::Summary) -> Value {
+    json!({ "id": s.id, "title": s.title, "updated": s.updated, "count": s.count, "preview": s.preview, "snippet": s.snippet })
+}
+
+fn conversation_json(c: &zen_desktop::conversations::Conversation) -> Value {
+    use zen_desktop::conversations::Role;
+    let messages: Vec<Value> = c
+        .messages
+        .iter()
+        .map(|m| json!({ "role": if m.role == Role::User { "user" } else { "assistant" }, "text": m.text, "at": m.at }))
+        .collect();
+    json!({ "id": c.id, "title": c.title, "created": c.created, "updated": c.updated, "messages": messages })
+}
+
+/// Conversaciones guardadas, las más recientes primero; con `query`, solo donde aparece ese texto.
+#[tauri::command]
+fn list_conversations(store: Store, query: Option<String>) -> Vec<Value> {
+    let found = match query.as_deref().map(str::trim).filter(|q| !q.is_empty()) {
+        Some(query) => store.search(query),
+        None => store.list(),
+    };
+    found.iter().map(summary_json).collect()
+}
+
+#[tauri::command]
+fn load_conversation(store: Store, id: u64) -> Result<Value, String> {
+    store.load(id).map(|c| conversation_json(&c)).ok_or_else(|| "Esa conversación ya no existe.".into())
+}
+
+/// Abre una conversación para continuarla: la IA recupera lo hablado y los mensajes nuevos se añaden a ella.
+#[tauri::command]
+fn resume_conversation(app: AppHandle, store: Store, id: u64) -> Result<Value, String> {
+    let conversation = store.resume(id).ok_or("Esa conversación ya no existe.")?;
+    let turns = zen_desktop::conversations::restorable(&conversation)
+        .into_iter()
+        .map(|(role, text)| (role == zen_desktop::conversations::Role::User, text))
+        .collect();
+    app.state::<Arc<Assistant>>().restore_history(turns);
+    Ok(conversation_json(&conversation))
+}
+
+#[tauri::command]
+fn delete_conversation(store: Store, id: u64) -> bool {
+    store.delete(id)
+}
+
+#[tauri::command]
+fn clear_conversations(store: Store) {
+    store.clear();
+}
+
+#[tauri::command]
+fn set_save_history(value: bool) -> Result<(), String> {
+    let mut settings = Settings::load();
+    settings.save_history = value;
+    settings.save()
+}
+
+/// Batería, memoria y disco para la pestaña «Hoy».
+#[tauri::command]
+fn get_system_status() -> Value {
+    zen_desktop::system_status()
+}
+
+/// Recordatorios pendientes para la pestaña Recordatorios, del que vence antes al que vence después.
+#[tauri::command]
+fn list_reminders(reminders: tauri::State<Arc<zen_desktop::Reminders>>) -> Value {
+    let items: Vec<Value> = reminders.list().iter().map(|r| json!({ "id": r.id, "text": r.text, "due": r.due })).collect();
+    json!({ "items": items, "max": zen_desktop::MAX_REMINDERS, "now": zen_desktop::unix_now() })
+}
+
+/// Crea un recordatorio: `minutes` (dentro de cuánto) o `at` (hora HH:MM, 24 h), una de las dos.
+#[tauri::command]
+fn add_reminder(reminders: tauri::State<Arc<zen_desktop::Reminders>>, text: String, minutes: Option<u64>, at: Option<String>) -> Result<String, String> {
+    let args = match (minutes, at) {
+        (Some(minutes), None) => json!({ "text": text, "delay_seconds": minutes.saturating_mul(60) }),
+        (None, Some(at)) => json!({ "text": text, "at": at }),
+        _ => return Err("Indica dentro de cuántos minutos o a qué hora.".into()),
+    };
+    reminders.create(&args).map(|(_, when)| when)
+}
+
+#[tauri::command]
+fn cancel_reminder(reminders: tauri::State<Arc<zen_desktop::Reminders>>, id: u64) -> bool {
+    reminders.cancel(id).is_some()
 }
 
 fn provider_kind(id: &str) -> Result<ProviderKind, String> {
@@ -377,6 +519,8 @@ fn get_settings(app: AppHandle) -> Value {
         "provider": settings.provider.id(),
         "providers": providers,
         "ollama_url": settings.ollama_url,
+        "ollama_think": settings.ollama_think,
+        "save_history": settings.save_history,
         "default_ollama_url": zen_ai::DEFAULT_OLLAMA_URL,
         "shortcut": settings.shortcut,
         "shortcut_active": active_shortcut,
@@ -426,6 +570,13 @@ fn set_ollama_url(url: String) -> Result<String, String> {
     settings.set_ollama_url(&url)?;
     settings.save()?;
     Ok(settings.ollama_url)
+}
+
+#[tauri::command]
+fn set_ollama_think(value: bool) -> Result<(), String> {
+    let mut settings = Settings::load();
+    settings.ollama_think = value;
+    settings.save()
 }
 
 /// Modelos descargados en Ollama, para sugerirlos en Ajustes. Sirve también de prueba de conexión.
@@ -773,6 +924,16 @@ fn main() {
             toggle_chat_cmd,
             hide_chat,
             submit_message,
+            list_conversations,
+            load_conversation,
+            resume_conversation,
+            delete_conversation,
+            clear_conversations,
+            set_save_history,
+            get_system_status,
+            list_reminders,
+            add_reminder,
+            cancel_reminder,
             resolve_confirmation,
             get_settings,
             set_provider,
@@ -780,6 +941,7 @@ fn main() {
             save_api_key,
             delete_api_key,
             set_ollama_url,
+            set_ollama_think,
             list_ollama_models,
             set_confirm_all,
             set_tool_enabled,
@@ -831,6 +993,7 @@ fn main() {
             let reminders = Arc::new(zen_desktop::Reminders::open(data_dir.clone()));
             let apps = Arc::new(zen_desktop::AppCatalog::new());
             apps.configure(settings.disabled_apps.clone(), settings.custom_apps.clone());
+            app.manage(Arc::new(zen_desktop::conversations::Conversations::open(data_dir.clone())));
             let memory = Arc::new(zen_desktop::Memory::open(data_dir.clone()));
             memory.set_enabled(settings.memory_enabled);
             zen_desktop::register_default_tools(&mut registry, Arc::new(locations), data_dir, reminders.clone(), apps.clone(), memory.clone());
@@ -855,6 +1018,8 @@ fn main() {
             register_shortcut(app.handle(), &settings.shortcut);
             build_tray(app.handle())?;
             // Al final: los avisos usan el bus de eventos, que ya debe estar registrado.
+            // La pestaña Recordatorios de la interfaz lee y cambia este mismo almacén.
+            app.manage(reminders.clone());
             system_events::spawn(app.handle().clone(), reminders.clone());
             alarms::spawn(app.handle().clone(), reminders);
             media::spawn(app.handle().clone());

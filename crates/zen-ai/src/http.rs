@@ -27,6 +27,40 @@ impl HttpClient {
         Self { agent, timeout_secs }
     }
 
+    /// POST cuya respuesta llega línea a línea (NDJSON, como hace Ollama con `stream: true`). Cada línea no vacía se
+    /// pasa a `on_line`, que puede cortar la lectura devolviendo un error. Con un estado de error no hay líneas:
+    /// se devuelve el cuerpo JSON entero para que el proveedor lo interprete.
+    pub fn post_lines(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: &Value,
+        on_line: &mut dyn FnMut(&str) -> Result<(), LlmError>,
+    ) -> Result<(u16, Option<Value>), LlmError> {
+        use std::io::{BufRead, BufReader};
+
+        let mut request = self.agent.post(url);
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let mut response = request.send_json(body).map_err(|e| map_error(e, self.timeout_secs))?;
+        let status = response.status().as_u16();
+        if status >= 400 {
+            let text = response.body_mut().read_to_string().map_err(|e| map_error(e, self.timeout_secs))?;
+            return Ok((status, Some(serde_json::from_str(&text).unwrap_or(Value::Null))));
+        }
+        for line in BufReader::new(response.body_mut().as_reader()).lines() {
+            let line = line.map_err(|error| match error.kind() {
+                std::io::ErrorKind::TimedOut => LlmError::Timeout(self.timeout_secs),
+                _ => LlmError::Network(error.to_string()),
+            })?;
+            if !line.trim().is_empty() {
+                on_line(&line)?;
+            }
+        }
+        Ok((status, None))
+    }
+
     /// Como `post_json`, pero con GET y sin cuerpo.
     pub fn get_json(&self, url: &str) -> Result<(u16, Value), LlmError> {
         let mut response = self.agent.get(url).call().map_err(|e| map_error(e, self.timeout_secs))?;

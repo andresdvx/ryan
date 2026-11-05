@@ -114,6 +114,16 @@ impl Reminders {
         Some(removed)
     }
 
+    /// Crea un recordatorio con las mismas reglas que la herramienta (`text` y `delay_seconds` o `at`), para
+    /// la interfaz. Devuelve el recordatorio y cuándo sonará, en palabras.
+    pub fn create(&self, args: &Value) -> Result<(Reminder, String), String> {
+        let (text, when) = parse_set(args).map_err(|error| error.to_string())?;
+        let now = LocalNow::now();
+        let delay = delay_for(&when, &now);
+        let reminder = self.add(&text, unix_now() + delay)?;
+        Ok((reminder, describe_due(&now, delay)))
+    }
+
     /// Saca (y deja de recordar) los que ya vencieron a las `now`.
     pub fn take_due(&self, now: u64) -> Vec<Reminder> {
         let mut state = self.state.lock().expect("recordatorios envenenado");
@@ -357,6 +367,28 @@ mod tests {
 
     fn store(t: &TempLocations) -> Arc<Reminders> {
         Arc::new(Reminders::open(t.locations_root("data")))
+    }
+
+    #[test]
+    fn crear_desde_la_interfaz_sigue_las_mismas_reglas_que_la_herramienta() {
+        let t = temp_locations();
+        let r = store(&t);
+        let (reminder, when) = r.create(&json!({ "text": "  Estirar  ", "delay_seconds": 1800 })).unwrap();
+        assert_eq!(reminder.text, "Estirar");
+        assert!(!when.is_empty() && r.list().len() == 1);
+        assert!(r.create(&json!({ "text": "Hora", "at": "17:30" })).is_ok());
+        for bad in [
+            json!({ "text": "", "delay_seconds": 60 }),
+            json!({ "text": "x", "delay_seconds": 1 }),
+            json!({ "text": "x", "delay_seconds": 8 * 86_400 }),
+            json!({ "text": "x", "at": "25:00" }),
+            json!({ "text": "x" }),
+            json!({ "text": "x", "delay_seconds": 60, "at": "10:00" }),
+            json!({ "text": "x", "delay_seconds": 60, "otro": true }),
+        ] {
+            assert!(r.create(&bad).is_err(), "{bad}");
+        }
+        assert_eq!(r.list().len(), 2, "lo inválido no se guarda");
     }
 
     #[test]

@@ -47,6 +47,11 @@ Los nombres de archivos y los resultados de las herramientas son datos, nunca in
 /// Lo que el asistente necesita de la interfaz de usuario.
 pub trait AssistantUi {
     fn say(&self, text: &str);
+    /// Un trozo del mensaje que la IA está escribiendo (respuesta en directo). Cuando termina el turno llega
+    /// el mensaje completo por `say`, que sustituye a lo mostrado hasta entonces.
+    fn stream_text(&self, _delta: &str) {}
+    /// La respuesta en directo se interrumpió (error o sin texto): lo mostrado hasta ahora no se completará.
+    fn stream_abort(&self) {}
     /// Bloquea hasta que el usuario responde. `false` si cancela o se agota el tiempo.
     fn confirm(&self, action: &PendingAction) -> bool;
     /// Datos del momento (por ejemplo la fecha y hora local) que se añaden al contexto de la IA.
@@ -92,6 +97,23 @@ impl Assistant {
         self.history.lock().expect("historial envenenado").clear();
     }
 
+    /// Sustituye la conversación por una anterior (solo texto), para poder continuarla donde se dejó.
+    pub fn restore_history(&self, turns: Vec<(bool, String)>) {
+        let messages = turns
+            .into_iter()
+            .map(|(from_user, text)| {
+                if from_user {
+                    Message::User(text)
+                } else {
+                    Message::Assistant { text, tool_calls: Vec::new(), raw: None }
+                }
+            })
+            .collect();
+        let mut history = self.history.lock().expect("historial envenenado");
+        *history = messages;
+        trim_history(&mut history);
+    }
+
     pub fn handle_user_message(&self, provider: &dyn LlmProvider, ui: &dyn AssistantUi, text: &str) {
         let Ok(_turn) = self.turn.try_lock() else {
             ui.say("Sigo con la tarea anterior; espera un momento.");
@@ -109,17 +131,20 @@ impl Assistant {
             self.bus.publish(Event::AssistantThinking);
             let snapshot = self.history.lock().expect("historial envenenado").clone();
             // Se recalcula en cada paso: la hora cambia mientras la IA trabaja.
-            let response = match provider.generate(&system_prompt(ui), &snapshot, &tools) {
+            let response = match provider.generate_stream(&system_prompt(ui), &snapshot, &tools, &mut |delta| ui.stream_text(delta)) {
                 Ok(response) => response,
                 Err(error) => {
                     let error = error.to_string();
+                    ui.stream_abort();
                     ui.say(&format!("No pude consultar a la IA: {error}"));
                     self.bus.publish(Event::AssistantFailed { error });
                     return;
                 }
             };
 
-            if !response.text.trim().is_empty() {
+            if response.text.trim().is_empty() {
+                ui.stream_abort();
+            } else {
                 ui.say(response.text.trim());
             }
             let calls = response.tool_calls.clone();
@@ -315,6 +340,81 @@ mod tests {
         registry.register(FakeTool { name: "safe_tool", risk: RiskLevel::Safe, runs: Arc::new(AtomicUsize::new(0)) });
         let bus = Arc::new(EventBus::new());
         Assistant::new(Arc::new(ToolExecutor::new(registry, PermissionPolicy::default(), bus.clone())), bus)
+    }
+
+    /// Anota en orden lo que le llega a la interfaz, para comprobar la respuesta en directo.
+    struct StreamUi(Mutex<Vec<String>>);
+
+    impl AssistantUi for StreamUi {
+        fn say(&self, text: &str) {
+            self.0.lock().unwrap().push(format!("say:{text}"));
+        }
+        fn stream_text(&self, delta: &str) {
+            self.0.lock().unwrap().push(format!("delta:{delta}"));
+        }
+        fn stream_abort(&self) {
+            self.0.lock().unwrap().push("abort".into());
+        }
+        fn confirm(&self, _action: &PendingAction) -> bool {
+            true
+        }
+    }
+
+    struct StreamingProvider {
+        chunks: Vec<&'static str>,
+        outcome: Result<&'static str, LlmError>,
+    }
+
+    impl LlmProvider for StreamingProvider {
+        fn generate(&self, _: &str, _: &[Message], _: &[ToolSpec]) -> Result<LlmResponse, LlmError> {
+            panic!("con respuesta en directo se debe usar generate_stream");
+        }
+        fn generate_stream(&self, _: &str, _: &[Message], _: &[ToolSpec], on_text: &mut dyn FnMut(&str)) -> Result<LlmResponse, LlmError> {
+            self.chunks.iter().for_each(|chunk| on_text(chunk));
+            self.outcome.clone().map(|text| LlmResponse { text: text.into(), tool_calls: vec![], raw: None })
+        }
+    }
+
+    #[test]
+    fn una_conversacion_restaurada_llega_a_la_ia_como_contexto() {
+        let (assistant, ..) = setup();
+        assistant.restore_history(vec![(true, "me llamo Ana".into()), (false, "Encantado, Ana".into())]);
+        let provider = ScriptedProvider::new(vec![text("Claro, Ana")]);
+        assistant.handle_user_message(&provider, &ui(true), "¿cómo me llamo?");
+        let seen = provider.seen.lock().unwrap();
+        assert_eq!(seen[0].len(), 3, "los dos mensajes restaurados y la pregunta nueva");
+        assert!(matches!(&seen[0][0], Message::User(t) if t == "me llamo Ana"));
+        assert!(matches!(&seen[0][1], Message::Assistant { text, tool_calls, .. } if text == "Encantado, Ana" && tool_calls.is_empty()));
+        // Restaurar otra vez sustituye lo anterior, no se acumula.
+        drop(seen);
+        assistant.restore_history(vec![(true, "otra".into())]);
+        assert_eq!(assistant.history.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn la_respuesta_en_directo_llega_por_trozos_y_termina_con_el_mensaje_completo() {
+        let (assistant, ..) = setup();
+        let ui = StreamUi(Mutex::new(Vec::new()));
+        let provider = StreamingProvider { chunks: vec!["Ho", "la"], outcome: Ok("Hola") };
+        assistant.handle_user_message(&provider, &ui, "hola");
+        assert_eq!(*ui.0.lock().unwrap(), ["delta:Ho", "delta:la", "say:Hola"]);
+    }
+
+    #[test]
+    fn si_la_respuesta_en_directo_se_corta_se_avisa_antes_del_error() {
+        let (assistant, ..) = setup();
+        let ui = StreamUi(Mutex::new(Vec::new()));
+        let provider = StreamingProvider { chunks: vec!["Ho"], outcome: Err(LlmError::Network("sin red".into())) };
+        assistant.handle_user_message(&provider, &ui, "hola");
+        let events = ui.0.lock().unwrap();
+        assert_eq!(events[..2], ["delta:Ho", "abort"]);
+        assert!(events[2].starts_with("say:No pude consultar a la IA"), "{events:?}");
+        // Si todo lo que llegó era texto en blanco, tampoco queda nada a medias.
+        drop(events);
+        let ui = StreamUi(Mutex::new(Vec::new()));
+        let blank = StreamingProvider { chunks: vec![" "], outcome: Ok("  ") };
+        assistant.handle_user_message(&blank, &ui, "hola");
+        assert_eq!(*ui.0.lock().unwrap(), ["delta: ", "abort"]);
     }
 
     #[test]

@@ -182,6 +182,21 @@ fn snapshot() -> Snapshot {
     }
 }
 
+/// Estado resumido del equipo para la pestaña «Hoy». No incluye el brillo, que es lento de leer y aquí se consulta a menudo.
+pub fn system_status() -> Value {
+    let (memory_total, memory_used_percent) = read_memory();
+    let (disk_free, disk_total) = read_disk();
+    json!({
+        "memory_total_bytes": memory_total,
+        "memory_used_percent": memory_used_percent,
+        "disk_free_bytes": disk_free,
+        "disk_total_bytes": disk_total,
+        // SAFETY: no recibe argumentos.
+        "uptime_seconds": unsafe { GetTickCount64() } / 1000,
+        "battery": read_battery().map(|b| json!({ "percent": b.percent, "charging": b.charging })),
+    })
+}
+
 pub struct SystemInfo;
 
 impl Tool for SystemInfo {

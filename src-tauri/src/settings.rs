@@ -21,6 +21,10 @@ pub struct Settings {
     models: BTreeMap<String, String>,
     /// Dirección del servidor de Ollama (modelos locales).
     pub ollama_url: String,
+    /// Dejar que el modelo local razone antes de responder (más lento). Apagado: responde casi al instante.
+    pub ollama_think: bool,
+    /// Guardar las conversaciones en este equipo para poder consultarlas y reanudarlas.
+    pub save_history: bool,
     pub shortcut: String,
     /// Pedir confirmación también en las acciones seguras.
     pub confirm_all: bool,
@@ -61,6 +65,8 @@ impl Default for Settings {
             provider: ProviderKind::Gemini,
             models: BTreeMap::new(),
             ollama_url: zen_ai::DEFAULT_OLLAMA_URL.to_string(),
+            ollama_think: false,
+            save_history: true,
             shortcut: DEFAULT_SHORTCUT.to_string(),
             confirm_all: false,
             disabled_tools: BTreeSet::new(),
@@ -142,6 +148,9 @@ impl Settings {
                 .as_str()
                 .and_then(|url| zen_ai::normalize_ollama_url(url).ok())
                 .unwrap_or_else(|| zen_ai::DEFAULT_OLLAMA_URL.to_string()),
+            // Solo un «true» explícito lo activa.
+            ollama_think: value["ollama_think"].as_bool().unwrap_or(false),
+            save_history: value["save_history"].as_bool().unwrap_or(true),
             shortcut,
             confirm_all: value["confirm_all"].as_bool().unwrap_or(false),
             disabled_tools,
@@ -185,6 +194,8 @@ impl Settings {
             "provider": self.provider.id(),
             "models": self.models,
             "ollama_url": self.ollama_url,
+            "ollama_think": self.ollama_think,
+            "save_history": self.save_history,
             "shortcut": self.shortcut,
             "confirm_all": self.confirm_all,
             "disabled_tools": self.disabled_tools,
@@ -318,6 +329,8 @@ mod tests {
         settings.provider = ProviderKind::OpenAi;
         settings.set_model(ProviderKind::OpenAi, " gpt-6-luna ").unwrap();
         settings.set_ollama_url(" http://192.168.1.20:11434/ ").unwrap();
+        settings.ollama_think = true;
+        settings.save_history = false;
         settings.shortcut = "Ctrl+Alt+J".into();
         settings.confirm_all = true;
         settings.wander = false;
@@ -339,6 +352,8 @@ mod tests {
         assert_eq!(restored, settings);
         assert_eq!(restored.model(ProviderKind::OpenAi), "gpt-6-luna");
         assert_eq!(restored.ollama_url, "http://192.168.1.20:11434");
+        assert!(restored.ollama_think && !Settings::default().ollama_think);
+        assert!(!restored.save_history && Settings::default().save_history, "el historial se guarda por defecto");
         let mut reset = restored.clone();
         reset.set_ollama_url("  ").unwrap();
         assert_eq!(reset.ollama_url, "http://localhost:11434");

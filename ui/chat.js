@@ -10,6 +10,9 @@ const statusEl = document.getElementById("status");
 let typingEl = null;
 let busyState = null; // "thinking" | "working" | null
 let pendingConfirmations = 0;
+// Burbuja de la respuesta que se está escribiendo en directo (null si no hay ninguna).
+let streamEl = null;
+let streamText = "";
 
 function addToHistory(el) {
   history.insertBefore(el, typingEl); // con typingEl nulo, equivale a añadir al final
@@ -77,7 +80,8 @@ function addCopyButton(el, text) {
 // Los avisos con icono (✔ ✖ ⏰ 🔋) se muestran tal cual; el resto de lo que dice el asistente admite formato.
 const PLAIN_PREFIX = /^(✔|✖|⏰|🔋|🔌|⚠)/u;
 
-function addMessage(role, text) {
+// `at` (segundos desde 1970) permite mostrar la hora original al recuperar una conversación guardada.
+function buildMessage(role, text, at) {
   const el = document.createElement("div");
   el.className = `msg ${role}`;
   if (role.startsWith("assistant") && !PLAIN_PREFIX.test(text) && window.renderRich) {
@@ -91,9 +95,13 @@ function addMessage(role, text) {
   addCopyButton(el, text);
   const time = document.createElement("span");
   time.className = "time";
-  time.textContent = new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+  time.textContent = new Date(at ? at * 1000 : Date.now()).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
   el.append(time);
-  addToHistory(el);
+  return el;
+}
+
+function addMessage(role, text) {
+  addToHistory(buildMessage(role, text));
 }
 
 // Frases para esperar: cambian en cada espera, pero no a mitad de ella.
@@ -113,7 +121,8 @@ function typingPhrase() {
 
 function renderTyping() {
   // Mientras se espera la respuesta del usuario a una confirmación no se aparenta estar ocupado.
-  const show = busyState !== null && pendingConfirmations === 0;
+  // Con texto escribiéndose ya no hacen falta los puntitos de espera.
+  const show = busyState !== null && pendingConfirmations === 0 && !streamEl;
   statusEl.dataset.busy = String(show);
   if (!show) {
     typingEl?.remove();
@@ -189,6 +198,7 @@ function remember(text) {
 
 input.addEventListener("keydown", (e) => {
   if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+  if (!palette.hidden) return; // con la paleta abierta, las flechas eligen comando
   if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
   if (e.key === "ArrowUp") {
     if (!sent.length || recallIndex === 0) return;
@@ -216,9 +226,12 @@ form.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text) return;
-  remember(text);
   recallIndex = null;
   input.value = "";
+  hidePalette();
+  // «/modelo» no se envía a la IA: abre el selector de modelo de la cabecera.
+  if (text.toLowerCase() === "/modelo") return openModelMenu();
+  remember(text);
   hideIdeas();
   // La API key no debe quedar a la vista en el historial.
   addMessage("user", text.startsWith("/key ") ? "/key ••••••••" : text);
@@ -227,7 +240,8 @@ form.addEventListener("submit", (e) => {
 
 document.getElementById("close").addEventListener("click", () => invoke("hide_chat"));
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") invoke("hide_chat");
+  // Escape cierra primero lo que esté abierto (paleta, selector de modelo) y solo después la ventana.
+  if (e.key === "Escape" && !closeOverlays()) invoke("hide_chat");
 });
 appWindow.onFocusChanged(({ payload: focused }) => {
   if (focused) input.focus();
@@ -308,6 +322,45 @@ window.__TAURI__.event.listen("character-state", (e) => {
   setBusy(midTask ? "working" : state === "thinking" || state === "working" ? state : null);
 });
 window.__TAURI__.event.listen("chat-log", (e) => addMessage("assistant", e.payload));
+
+// Respuesta en directo: el texto va apareciendo en una burbuja y, al terminar, esta se sustituye por el mensaje
+// completo (ya con formato). Si se interrumpe, lo escrito se queda marcado como incompleto.
+function streamDelta(delta) {
+  const nearBottom = history.scrollHeight - history.scrollTop - history.clientHeight < 80;
+  if (!streamEl) {
+    streamEl = document.createElement("div");
+    streamEl.className = "msg assistant streaming";
+    streamText = "";
+    renderTyping();
+    addToHistory(streamEl);
+  }
+  streamText += delta;
+  streamEl.textContent = streamText;
+  if (nearBottom) history.scrollTop = history.scrollHeight;
+}
+
+// Cierra la burbuja en directo. Devuelve false si no había ninguna abierta.
+function endStream(finalText) {
+  const el = streamEl;
+  streamEl = null;
+  streamText = "";
+  if (!el) return false;
+  if (finalText) {
+    el.replaceWith(buildMessage("assistant", finalText));
+  } else if (el.textContent.trim()) {
+    el.classList.replace("streaming", "interrupted");
+  } else {
+    el.remove();
+  }
+  renderTyping();
+  history.scrollTop = history.scrollHeight;
+  return true;
+}
+window.__TAURI__.event.listen("chat-stream", (e) => streamDelta(e.payload));
+window.__TAURI__.event.listen("chat-final", (e) => {
+  if (!endStream(e.payload)) addMessage("assistant", e.payload);
+});
+window.__TAURI__.event.listen("chat-stream-abort", () => endStream(null));
 window.__TAURI__.event.listen("reminder", (e) => addMessage("assistant reminder", `⏰ ${e.payload}`));
 function showConfirmation({ id, tool, preview, risk, detailed }) {
   const card = document.createElement("div");
@@ -424,7 +477,13 @@ window.__TAURI__.event.listen("character-changed", loadHeaderAvatar);
 
 // --- Pestañas ---
 const tabs = document.querySelectorAll(".tab");
-const views = { chat: document.getElementById("view-chat"), settings: document.getElementById("view-settings") };
+const views = {
+  today: document.getElementById("view-today"),
+  history: document.getElementById("view-history"),
+  chat: document.getElementById("view-chat"),
+  reminders: document.getElementById("view-reminders"),
+  settings: document.getElementById("view-settings"),
+};
 
 function showTab(name) {
   tabs.forEach((tab) => {
@@ -433,10 +492,192 @@ function showTab(name) {
     tab.setAttribute("aria-selected", String(active));
   });
   Object.entries(views).forEach(([key, view]) => (view.hidden = key !== name));
+  if (name === "reminders") openReminders();
+  else closeReminders();
+  if (name === "today") openToday();
+  else closeToday();
+  if (name === "history") openHistory();
   if (name === "settings") loadSettings();
-  else input.focus();
+  else if (name === "chat") input.focus();
 }
 tabs.forEach((tab) => tab.addEventListener("click", () => showTab(tab.dataset.tab)));
+
+// --- Recordatorios ---
+const reminderForm = document.getElementById("reminder-form");
+const reminderText = document.getElementById("reminder-text");
+const reminderMode = document.getElementById("reminder-mode");
+const reminderIn = document.getElementById("reminder-in");
+const reminderMinutes = document.getElementById("reminder-minutes");
+const reminderClock = document.getElementById("reminder-clock");
+const reminderAdd = document.getElementById("reminder-add");
+const reminderPresets = document.getElementById("reminder-presets");
+const reminderMessage = document.getElementById("reminder-message");
+const reminderList = document.getElementById("reminder-list");
+const reminderEmpty = document.getElementById("reminder-empty");
+const reminderCount = document.getElementById("reminder-count");
+const reminderBadge = document.getElementById("reminder-badge");
+let reminders = [];
+let reminderMax = 50;
+let reminderTick = null;
+
+// «en 12 min», «en 2 h 5 min», «en 3 d».
+function relativeTime(seconds) {
+  if (seconds <= 0) return "ahora";
+  if (seconds < 60) return "en menos de 1 min";
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `en ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  if (hours < 24) return restMinutes ? `en ${hours} h ${restMinutes} min` : `en ${hours} h`;
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours ? `en ${days} d ${restHours} h` : `en ${days} d`;
+}
+
+// «Hoy 19:30», «Mañana 08:00», «Jueves 5 nov 10:15».
+function whenLabel(due) {
+  const date = new Date(due * 1000);
+  const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((dayStart(date) - dayStart(new Date())) / 86400000);
+  const time = date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+  if (days <= 0) return `Hoy ${time}`;
+  if (days === 1) return `Mañana ${time}`;
+  const day = date.toLocaleDateString("es", { weekday: "long", day: "numeric", month: "short" });
+  return `${day.charAt(0).toUpperCase()}${day.slice(1)} ${time}`;
+}
+
+function reminderRow(item) {
+  const row = document.createElement("div");
+  row.className = "reminder";
+  row.dataset.due = String(item.due);
+
+  const when = document.createElement("div");
+  when.className = "when";
+  const label = document.createElement("strong");
+  label.textContent = whenLabel(item.due);
+  const left = document.createElement("span");
+  left.className = "left";
+  when.append(label, left);
+
+  const text = document.createElement("div");
+  text.className = "text";
+  text.textContent = item.text;
+
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "cancel";
+  cancel.textContent = "✕";
+  cancel.title = cancel.ariaLabel = "Cancelar este recordatorio";
+  cancel.addEventListener("click", async () => {
+    cancel.disabled = true;
+    try {
+      await invoke("cancel_reminder", { id: item.id });
+      setMessage(reminderMessage, "Recordatorio cancelado.", "ok");
+    } catch (error) {
+      setMessage(reminderMessage, String(error), "error");
+    }
+    await loadReminders();
+  });
+
+  row.append(when, text, cancel);
+  return row;
+}
+
+// La cuenta atrás se recalcula cada segundo sin volver a pedir la lista.
+function refreshCountdowns(list = reminderList) {
+  const now = Date.now() / 1000;
+  for (const row of list.children) {
+    const seconds = Number(row.dataset.due) - now;
+    row.querySelector(".left").textContent = relativeTime(seconds);
+    row.classList.toggle("soon", seconds <= 300);
+  }
+}
+
+function renderReminders() {
+  reminderList.replaceChildren(...reminders.map(reminderRow));
+  const count = reminders.length;
+  reminderEmpty.hidden = count > 0;
+  reminderCount.textContent = count ? `${count}/${reminderMax}` : "";
+  reminderBadge.textContent = String(count);
+  reminderBadge.hidden = count === 0;
+  refreshCountdowns();
+  renderTodayReminders();
+}
+
+async function loadReminders() {
+  try {
+    const data = await invoke("list_reminders");
+    reminders = data.items;
+    reminderMax = data.max;
+    renderReminders();
+  } catch {
+    // sin la lista no hay nada que pintar; se reintenta en el siguiente ciclo
+  }
+}
+
+function openReminders() {
+  loadReminders();
+  clearInterval(reminderTick);
+  let ticks = 0;
+  reminderTick = setInterval(() => {
+    refreshCountdowns();
+    // Cada pocos segundos se vuelve a leer: así aparecen los que crea la IA y desaparecen los que ya sonaron.
+    if (++ticks % 5 === 0) loadReminders();
+  }, 1000);
+}
+
+function closeReminders() {
+  clearInterval(reminderTick);
+  reminderTick = null;
+}
+
+function showReminderMode() {
+  const at = reminderMode.value === "at";
+  reminderIn.hidden = at;
+  reminderClock.hidden = !at;
+  reminderPresets.hidden = at;
+}
+reminderMode.addEventListener("change", showReminderMode);
+
+reminderPresets.addEventListener("click", (e) => {
+  const preset = e.target.closest("[data-minutes]");
+  if (!preset) return;
+  reminderMinutes.value = preset.dataset.minutes;
+  reminderText.focus();
+});
+
+reminderForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = reminderText.value.trim();
+  if (!text) return setMessage(reminderMessage, "Escribe qué quieres que te recuerde.", "error");
+  const byClock = reminderMode.value === "at";
+  const minutes = Number(reminderMinutes.value);
+  if (byClock ? !reminderClock.value : !Number.isInteger(minutes) || minutes < 1) {
+    return setMessage(reminderMessage, byClock ? "Elige la hora." : "Indica los minutos (un número entero).", "error");
+  }
+  reminderAdd.disabled = true;
+  try {
+    const when = await invoke("add_reminder", {
+      text,
+      minutes: byClock ? null : minutes,
+      at: byClock ? reminderClock.value : null,
+    });
+    reminderText.value = "";
+    setMessage(reminderMessage, `Listo, te lo recordaré ${when}.`, "ok");
+  } catch (error) {
+    setMessage(reminderMessage, String(error), "error");
+  } finally {
+    reminderAdd.disabled = false;
+    await loadReminders();
+  }
+});
+
+// Cuando suena uno, o cuando la IA termina una tarea (quizá creó uno), se actualiza la lista y el contador.
+window.__TAURI__.event.listen("reminder", loadReminders);
+window.__TAURI__.event.listen("character-state", (e) => {
+  if (e.payload === "success") loadReminders();
+});
+loadReminders();
 
 // Secciones de Ajustes: una a la vez, para no tener que recorrer una lista larguísima.
 const subtabs = [...document.querySelectorAll(".subtab")];
@@ -568,6 +809,9 @@ function renderSettings() {
   if (settings.computer_control) ccWarning.hidden = true;
   confirmAllBox.checked = settings.confirm_all;
   renderTools();
+  ollamaThinkBox.checked = Boolean(settings.ollama_think);
+  historySave.checked = settings.save_history !== false;
+  updateModelPill();
 }
 
 // --- Aplicaciones que la IA puede abrir ---
@@ -945,4 +1189,657 @@ deleteKey.addEventListener("click", async () => {
   }
   await loadSettings();
 });
+// --- Modelo de IA en la cabecera ---
+const modelPill = document.getElementById("model-pill");
+const modelPillText = document.getElementById("model-pill-text");
+const modelMenu = document.getElementById("model-menu");
+const ollamaThinkBox = document.getElementById("ollama-think");
+
+const modelInUse = (p) => p.model || p.default_model;
+
+// «qwen3.5:9b · local» para un modelo en tu equipo, «Google Gemini · gemini-…» para uno en la nube.
+function updateModelPill() {
+  const p = settings && currentProvider();
+  if (!p) return;
+  modelPillText.textContent = p.needs_key ? `${p.name} · ${modelInUse(p)}` : `${modelInUse(p)} · local`;
+  modelPill.title = `Modelo en uso: ${modelInUse(p)} (${p.name}). Pulsa para cambiar.`;
+  modelPill.hidden = false;
+}
+
+function menuTitle(text) {
+  const el = document.createElement("div");
+  el.className = "menu-title";
+  el.textContent = text;
+  return el;
+}
+
+function menuHint(text) {
+  const el = document.createElement("div");
+  el.className = "menu-hint";
+  el.textContent = text;
+  return el;
+}
+
+function menuItem(label, { active = false, note = "", onClick }) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "menu-item";
+  button.setAttribute("role", "menuitemradio");
+  button.setAttribute("aria-checked", String(active));
+  const mark = document.createElement("span");
+  mark.className = "mark";
+  mark.textContent = active ? "✓" : "";
+  const name = document.createElement("span");
+  name.className = "label";
+  name.textContent = label;
+  button.append(mark, name);
+  if (note) {
+    const small = document.createElement("span");
+    small.className = "note";
+    small.textContent = note;
+    button.append(small);
+  }
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function closeModelMenu() {
+  modelMenu.hidden = true;
+  modelPill.setAttribute("aria-expanded", "false");
+}
+
+async function chooseProvider(id) {
+  if (id === settings.provider) return;
+  try {
+    await invoke("set_provider", { id });
+    await loadSettings();
+    closeModelMenu();
+    addMessage("assistant", `Ahora uso ${currentProvider().name}. Empezamos una conversación nueva.`);
+  } catch (error) {
+    addMessage("assistant", `No pude cambiar de proveedor: ${error}`);
+  }
+}
+
+async function chooseModel(provider, model) {
+  try {
+    await invoke("set_model", { provider, model });
+    await loadSettings();
+    closeModelMenu();
+    addMessage("assistant", `Listo, ahora uso el modelo ${model}.`);
+  } catch (error) {
+    addMessage("assistant", `No pude cambiar de modelo: ${error}`);
+  }
+}
+
+async function renderModelMenu() {
+  const p = currentProvider();
+  const entries = [menuTitle("Proveedor")];
+  for (const provider of settings.providers) {
+    entries.push(
+      menuItem(provider.name, {
+        active: provider.id === p.id,
+        note: provider.needs_key ? "" : "en tu equipo",
+        onClick: () => chooseProvider(provider.id),
+      }),
+    );
+  }
+  modelMenu.replaceChildren(...entries);
+
+  if (!p.needs_key) {
+    const holder = document.createElement("div");
+    holder.className = "menu-models";
+    holder.append(menuHint("Buscando modelos…"));
+    modelMenu.append(menuTitle("Modelos de Ollama"), holder);
+
+    const think = document.createElement("label");
+    think.className = "switch menu-switch";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = Boolean(settings.ollama_think);
+    const track = document.createElement("span");
+    track.className = "track";
+    const text = document.createElement("span");
+    text.className = "text";
+    text.textContent = "Razonar antes de responder (más lento)";
+    think.append(box, track, text);
+    box.addEventListener("change", async () => {
+      await invoke("set_ollama_think", { value: box.checked }).catch(() => {});
+      await loadSettings();
+    });
+    modelMenu.append(think);
+
+    try {
+      const names = await invoke("list_ollama_models", {});
+      holder.replaceChildren(
+        ...(names.length
+          ? names.map((name) => menuItem(name, { active: name === modelInUse(p), onClick: () => chooseModel(p.id, name) }))
+          : [menuHint("No hay modelos descargados. Prueba: ollama pull qwen3:8b")]),
+      );
+    } catch (error) {
+      holder.replaceChildren(menuHint(String(error)));
+    }
+  }
+
+  modelMenu.append(
+    menuItem("Más opciones de IA…", {
+      onClick: () => {
+        closeModelMenu();
+        showTab("settings");
+        showPanel("ai");
+      },
+    }),
+  );
+}
+
+async function openModelMenu() {
+  showTab("chat");
+  if (!settings) await loadSettings().catch(() => {});
+  if (!settings) return;
+  modelMenu.hidden = false;
+  modelPill.setAttribute("aria-expanded", "true");
+  renderModelMenu();
+}
+
+modelPill.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (modelMenu.hidden) openModelMenu();
+  else closeModelMenu();
+});
+document.addEventListener("click", (e) => {
+  if (!modelMenu.hidden && !modelMenu.contains(e.target)) closeModelMenu();
+});
+
+// El mismo interruptor que en el menú, dentro de Ajustes > IA.
+ollamaThinkBox.addEventListener("change", async () => {
+  try {
+    await invoke("set_ollama_think", { value: ollamaThinkBox.checked });
+    setMessage(ollamaMessage, ollamaThinkBox.checked ? "El modelo razonará antes de responder (más lento)." : "El modelo responderá directamente.", "ok");
+  } catch (error) {
+    setMessage(ollamaMessage, String(error), "error");
+  }
+  await loadSettings();
+});
+
+// --- Paleta de comandos: al escribir «/» aparece la lista con lo que se puede usar ---
+const palette = document.getElementById("palette");
+const COMMANDS = [
+  { cmd: "/new", desc: "Empezar una conversación nueva" },
+  { cmd: "/modelo", desc: "Cambiar de proveedor o de modelo de IA" },
+  { cmd: "/tools", desc: "Ver las herramientas disponibles" },
+  { cmd: "/key", args: "TU_CLAVE", desc: "Guardar la API key del proveedor activo" },
+  { cmd: "/forget", desc: "Borrar la API key guardada" },
+];
+let paletteItems = [];
+let paletteIndex = 0;
+
+function hidePalette() {
+  palette.hidden = true;
+  paletteItems = [];
+}
+
+// Cierra lo que esté abierto encima del chat; devuelve si había algo.
+function closeOverlays() {
+  const open = !palette.hidden || !modelMenu.hidden;
+  hidePalette();
+  closeModelMenu();
+  return open;
+}
+
+function renderPalette() {
+  const typed = input.value.toLowerCase();
+  // Solo mientras se escribe el comando: en cuanto hay un espacio, empiezan los argumentos.
+  paletteItems = typed.startsWith("/") && !/\s/.test(typed) ? COMMANDS.filter((c) => c.cmd.startsWith(typed)) : [];
+  if (!paletteItems.length) return hidePalette();
+  paletteIndex = Math.min(paletteIndex, paletteItems.length - 1);
+  palette.replaceChildren(
+    ...paletteItems.map((item, index) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "palette-item";
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", String(index === paletteIndex));
+      const cmd = document.createElement("strong");
+      cmd.textContent = item.args ? `${item.cmd} ${item.args}` : item.cmd;
+      const desc = document.createElement("span");
+      desc.textContent = item.desc;
+      row.append(cmd, desc);
+      // mousedown (y no click) para que la caja de texto no pierda el foco.
+      row.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        pickCommand(index);
+      });
+      return row;
+    }),
+  );
+  palette.hidden = false;
+}
+
+function pickCommand(index) {
+  const item = paletteItems[index];
+  if (!item) return;
+  input.value = item.args ? `${item.cmd} ` : item.cmd;
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  renderPalette();
+}
+
+input.addEventListener("input", () => {
+  paletteIndex = 0;
+  renderPalette();
+});
+input.addEventListener("keydown", (e) => {
+  if (palette.hidden) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    paletteIndex = (paletteIndex + (e.key === "ArrowDown" ? 1 : -1) + paletteItems.length) % paletteItems.length;
+    renderPalette();
+  } else if (e.key === "Tab") {
+    e.preventDefault();
+    pickCommand(paletteIndex);
+  } else if (e.key === "Enter" && input.value.trim().toLowerCase() !== paletteItems[paletteIndex].cmd) {
+    // Con un comando a medias, Enter lo completa; con el comando ya entero, lo envía.
+    e.preventDefault();
+    pickCommand(paletteIndex);
+  }
+});
+input.addEventListener("blur", () => setTimeout(hidePalette, 120));
+
+// --- Fechas legibles de cosas que ya pasaron ---
+const capital = (text) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+
+// «Hoy 21:05», «Ayer 18:20», «Lunes 20:10», «2 nov», «2 nov 2025».
+function pastLabel(seconds) {
+  const date = new Date(seconds * 1000);
+  const now = new Date();
+  const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((dayStart(now) - dayStart(date)) / 86400000);
+  const time = date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+  if (days <= 0) return `Hoy ${time}`;
+  if (days === 1) return `Ayer ${time}`;
+  if (days < 7) return `${capital(date.toLocaleDateString("es", { weekday: "long" }))} ${time}`;
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return date.toLocaleDateString("es", sameYear ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
+}
+
+// --- Hoy: lo importante de un vistazo ---
+const todayDate = document.getElementById("today-date");
+const todayGreeting = document.getElementById("today-greeting");
+const todayMediaCard = document.getElementById("today-media-card");
+const todayMediaTitle = document.getElementById("today-media-title");
+const todayMediaSub = document.getElementById("today-media-sub");
+const todayMediaPrev = document.getElementById("today-media-prev");
+const todayMediaToggle = document.getElementById("today-media-toggle");
+const todayMediaNext = document.getElementById("today-media-next");
+const todayRemindersEl = document.getElementById("today-reminders");
+const todayRemindersEmpty = document.getElementById("today-reminders-empty");
+const todayAllReminders = document.getElementById("today-all-reminders");
+const todayStats = document.getElementById("today-stats");
+const todayLastCard = document.getElementById("today-last-card");
+const todayLastTitle = document.getElementById("today-last-title");
+const todayLastSub = document.getElementById("today-last-sub");
+const todayLastResume = document.getElementById("today-last-resume");
+const todayShortcuts = document.getElementById("today-shortcuts");
+let todayTimer = null;
+let lastMedia = null;
+let lastConversationId = null;
+
+function renderTodayHeader() {
+  const now = new Date();
+  const hour = now.getHours();
+  const hello = hour >= 5 && hour < 13 ? "¡Buenos días!" : hour >= 13 && hour < 20 ? "¡Buenas tardes!" : "¡Buenas noches!";
+  const day = capital(now.toLocaleDateString("es", { weekday: "long", day: "numeric", month: "long" }));
+  todayDate.textContent = `${day} · ${now.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}`;
+  todayGreeting.textContent = `${hello} ¿En qué te ayudo hoy?`;
+}
+
+// Los tres recordatorios más próximos; el resto, en su pestaña.
+function renderTodayReminders() {
+  todayRemindersEl.replaceChildren(...reminders.slice(0, 3).map(reminderRow));
+  todayRemindersEmpty.hidden = reminders.length > 0;
+  todayAllReminders.hidden = reminders.length <= 3;
+  todayAllReminders.textContent = `Ver todos (${reminders.length})`;
+  refreshCountdowns(todayRemindersEl);
+}
+todayAllReminders.addEventListener("click", () => showTab("reminders"));
+
+function renderTodayMedia() {
+  todayMediaCard.hidden = !lastMedia;
+  if (!lastMedia) return;
+  const playing = lastMedia.state === "playing";
+  todayMediaTitle.textContent = lastMedia.title || "Sin título";
+  todayMediaSub.textContent = [lastMedia.artist, lastMedia.app].filter(Boolean).join(" · ");
+  todayMediaToggle.textContent = playing ? "⏸" : "▶";
+  todayMediaToggle.title = todayMediaToggle.ariaLabel = playing ? "Pausar" : "Reproducir";
+  todayMediaPrev.disabled = !lastMedia.can_previous;
+  todayMediaNext.disabled = !lastMedia.can_next;
+  todayMediaToggle.disabled = !lastMedia.can_play_pause;
+}
+
+async function refreshMedia() {
+  try {
+    const snapshot = await invoke("get_media");
+    lastMedia = snapshot ? snapshot.state : null;
+  } catch {
+    lastMedia = null;
+  }
+  renderTodayMedia();
+}
+window.__TAURI__.event.listen("media-state", (e) => {
+  lastMedia = e.payload;
+  renderTodayMedia();
+});
+
+async function pressMedia(action) {
+  try {
+    await invoke("media_control", { action });
+  } catch {
+    // la aplicación puede no aceptar la orden; el estado real se vuelve a leer enseguida
+  }
+  setTimeout(refreshMedia, 300);
+}
+todayMediaPrev.addEventListener("click", () => pressMedia("previous"));
+todayMediaToggle.addEventListener("click", () => pressMedia("play_pause"));
+todayMediaNext.addEventListener("click", () => pressMedia("next"));
+
+const gigabytes = (bytes) => `${(bytes / 2 ** 30).toFixed(1).replace(".", ",")} GB`;
+
+function meter(label, percent, detail, warn) {
+  const box = document.createElement("div");
+  box.className = "meter";
+  const top = document.createElement("div");
+  top.className = "meter-top";
+  const name = document.createElement("span");
+  name.textContent = label;
+  const value = document.createElement("strong");
+  value.textContent = detail;
+  top.append(name, value);
+  const bar = document.createElement("div");
+  bar.className = `meter-bar${warn ? " warn" : ""}`;
+  const fill = document.createElement("i");
+  fill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  bar.append(fill);
+  box.append(top, bar);
+  return box;
+}
+
+async function refreshStatus() {
+  try {
+    const s = await invoke("get_system_status");
+    const rows = [];
+    if (s.battery) {
+      const low = s.battery.percent <= 20 && !s.battery.charging;
+      rows.push(meter(`🔋 Batería${s.battery.charging ? " · cargando" : ""}`, s.battery.percent, `${s.battery.percent} %`, low));
+    }
+    rows.push(meter("🧠 Memoria", s.memory_used_percent, `${s.memory_used_percent} % de ${gigabytes(s.memory_total_bytes)}`, s.memory_used_percent >= 90));
+    if (s.disk_total_bytes > 0) {
+      const usedPercent = Math.round(((s.disk_total_bytes - s.disk_free_bytes) / s.disk_total_bytes) * 100);
+      rows.push(meter("💾 Disco", usedPercent, `${gigabytes(s.disk_free_bytes)} libres de ${gigabytes(s.disk_total_bytes)}`, usedPercent >= 90));
+    }
+    const hours = Math.floor(s.uptime_seconds / 3600);
+    const uptime = document.createElement("p");
+    uptime.className = "hint";
+    uptime.textContent = hours >= 24 ? `Encendido desde hace ${Math.floor(hours / 24)} d ${hours % 24} h.` : `Encendido desde hace ${hours} h ${Math.floor((s.uptime_seconds % 3600) / 60)} min.`;
+    todayStats.replaceChildren(...rows, uptime);
+  } catch {
+    todayStats.textContent = "No pude leer el estado del equipo.";
+  }
+}
+
+async function refreshLastConversation() {
+  try {
+    const [latest] = await invoke("list_conversations", {});
+    todayLastCard.hidden = !latest;
+    if (!latest) return;
+    lastConversationId = latest.id;
+    todayLastTitle.textContent = latest.title;
+    todayLastSub.textContent = `${pastLabel(latest.updated)} · ${latest.count} mensajes`;
+  } catch {
+    todayLastCard.hidden = true;
+  }
+}
+todayLastResume.addEventListener("click", () => resumeConversation(lastConversationId));
+
+// Lo que se pide con un clic: se envía tal cual, salvo los atajos que necesitan completarse.
+const SHORTCUTS = [
+  ["🎵", "Pon música tranquila", true],
+  ["📂", "¿Qué ocupa más espacio en mis Descargas?", true],
+  ["🔁", "Busca archivos duplicados en el escritorio", true],
+  ["🗂️", "Organiza mi carpeta de Descargas", true],
+  ["🪟", "Mira esta ventana y dime qué ves", true],
+  ["⏰", "Recuérdame ", false],
+  ["🆕", "/new", true],
+];
+
+function askRyan(text, send) {
+  showTab("chat");
+  if (!send) {
+    input.value = text;
+    input.focus();
+    input.setSelectionRange(text.length, text.length);
+    return;
+  }
+  hideIdeas();
+  remember(text);
+  addMessage("user", text);
+  invoke("submit_message", { text });
+}
+
+for (const [icon, text, send] of SHORTCUTS) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "idea";
+  button.textContent = `${icon} ${text.trim()}${send ? "" : "…"}`;
+  button.addEventListener("click", () => askRyan(text, send));
+  todayShortcuts.append(button);
+}
+
+async function refreshToday() {
+  await Promise.allSettled([loadReminders(), refreshStatus(), refreshMedia(), refreshLastConversation()]);
+  renderTodayHeader();
+}
+
+function openToday() {
+  renderTodayHeader();
+  refreshToday();
+  clearInterval(todayTimer);
+  let ticks = 0;
+  todayTimer = setInterval(() => {
+    refreshCountdowns(todayRemindersEl);
+    if (++ticks % 10 === 0) refreshToday();
+  }, 1000);
+}
+
+function closeToday() {
+  clearInterval(todayTimer);
+  todayTimer = null;
+}
+
+// --- Historial de conversaciones ---
+const historyItems = document.getElementById("history-items");
+const historyEmpty = document.getElementById("history-empty");
+const historySearch = document.getElementById("history-search");
+const historySave = document.getElementById("history-save");
+const historyClear = document.getElementById("history-clear");
+const historyMessage = document.getElementById("history-message");
+const historyListView = document.getElementById("history-list-view");
+const historyDetailView = document.getElementById("history-detail-view");
+const historyBack = document.getElementById("history-back");
+const historyResume = document.getElementById("history-resume");
+const historyDelete = document.getElementById("history-delete");
+const detailTitle = document.getElementById("detail-title");
+const detailMeta = document.getElementById("detail-meta");
+const detailMessages = document.getElementById("detail-messages");
+const detailMessage = document.getElementById("detail-message");
+let openConversationId = null;
+let searchTimer = null;
+
+// Cada carácter en minúscula y sin tilde, uno por uno: así los índices coinciden con el texto original.
+const foldChars = (text) => [...text].map((c) => c.normalize("NFD").charAt(0).toLowerCase());
+
+// Escribe `text` en `el` resaltando lo que coincide con la búsqueda (sin distinguir mayúsculas ni tildes).
+function appendHighlighted(el, text, query) {
+  const needle = foldChars(query.trim());
+  if (!needle.length) {
+    el.textContent = text;
+    return;
+  }
+  const chars = [...text];
+  const folded = foldChars(text);
+  let from = 0;
+  while (from < chars.length) {
+    let found = -1;
+    for (let start = from; start + needle.length <= folded.length; start += 1) {
+      if (needle.every((c, offset) => folded[start + offset] === c)) {
+        found = start;
+        break;
+      }
+    }
+    if (found < 0) break;
+    el.append(chars.slice(from, found).join(""));
+    const mark = document.createElement("mark");
+    mark.textContent = chars.slice(found, found + needle.length).join("");
+    el.append(mark);
+    from = found + needle.length;
+  }
+  el.append(chars.slice(from).join(""));
+}
+
+function conversationCard(item, query) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "conv";
+  const title = document.createElement("div");
+  title.className = "conv-title";
+  appendHighlighted(title, item.title, query);
+  const meta = document.createElement("div");
+  meta.className = "conv-meta";
+  meta.textContent = `${pastLabel(item.updated)} · ${item.count} mensajes`;
+  const preview = document.createElement("div");
+  preview.className = "conv-preview";
+  appendHighlighted(preview, item.snippet || item.preview, query);
+  card.append(title, meta, preview);
+  card.addEventListener("click", () => openConversation(item.id));
+  return card;
+}
+
+async function loadHistory() {
+  const query = historySearch.value.trim();
+  try {
+    const items = await invoke("list_conversations", { query: query || null });
+    historyItems.replaceChildren(...items.map((item) => conversationCard(item, query)));
+    historyEmpty.hidden = items.length > 0;
+    if (!items.length) {
+      historyEmpty.textContent = query
+        ? `Ninguna conversación menciona «${query}».`
+        : historySave.checked
+          ? "Todavía no hay conversaciones guardadas. Habla con tu asistente en la pestaña Charla y aparecerán aquí."
+          : "El historial está apagado: las conversaciones nuevas no se guardan.";
+    }
+  } catch (error) {
+    setMessage(historyMessage, String(error), "error");
+  }
+}
+
+function openHistory() {
+  historyListView.hidden = false;
+  historyDetailView.hidden = true;
+  loadHistory();
+}
+
+historySearch.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadHistory, 180);
+});
+
+async function openConversation(id) {
+  try {
+    const conversation = await invoke("load_conversation", { id });
+    openConversationId = id;
+    detailTitle.textContent = conversation.title;
+    detailMeta.textContent = `${pastLabel(conversation.created)} · ${conversation.messages.length} mensajes`;
+    detailMessages.replaceChildren(...conversation.messages.map((m) => buildMessage(m.role, m.text, m.at)));
+    setMessage(detailMessage, "");
+    historyDelete.textContent = "Borrar";
+    historyListView.hidden = true;
+    historyDetailView.hidden = false;
+    document.querySelector("#view-history .panels").scrollTop = 0;
+  } catch (error) {
+    setMessage(historyMessage, String(error), "error");
+    loadHistory();
+  }
+}
+historyBack.addEventListener("click", openHistory);
+
+// Vuelve a mostrar la conversación en el chat y la IA recupera lo hablado; lo nuevo se añade a ella.
+async function resumeConversation(id) {
+  try {
+    const conversation = await invoke("resume_conversation", { id });
+    hideIdeas();
+    history.replaceChildren();
+    typingEl = null;
+    streamEl = null;
+    for (const m of conversation.messages) addToHistory(buildMessage(m.role, m.text, m.at));
+    const divider = document.createElement("div");
+    divider.className = "divider";
+    divider.textContent = `Continúas la conversación «${conversation.title}»`;
+    addToHistory(divider);
+    renderTyping();
+    showTab("chat");
+  } catch (error) {
+    setMessage(openConversationId === id ? detailMessage : historyMessage, String(error), "error");
+  }
+}
+historyResume.addEventListener("click", () => resumeConversation(openConversationId));
+
+// Borrar pide una segunda pulsación: así no se pierde una conversación por un clic suelto.
+function armed(button, idleText, onConfirm) {
+  let timer = null;
+  button.addEventListener("click", () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+      button.textContent = idleText;
+      onConfirm();
+      return;
+    }
+    button.textContent = "¿Seguro? Pulsa otra vez";
+    timer = setTimeout(() => {
+      timer = null;
+      button.textContent = idleText;
+    }, 3500);
+  });
+}
+
+armed(historyDelete, "Borrar", async () => {
+  try {
+    await invoke("delete_conversation", { id: openConversationId });
+    openHistory();
+    setMessage(historyMessage, "Conversación borrada.", "ok");
+  } catch (error) {
+    setMessage(detailMessage, String(error), "error");
+  }
+});
+
+armed(historyClear, "Borrar todo el historial", async () => {
+  try {
+    await invoke("clear_conversations");
+    setMessage(historyMessage, "Historial borrado.", "ok");
+  } catch (error) {
+    setMessage(historyMessage, String(error), "error");
+  }
+  loadHistory();
+});
+
+historySave.addEventListener("change", async () => {
+  try {
+    await invoke("set_save_history", { value: historySave.checked });
+    setMessage(historyMessage, historySave.checked ? "Las conversaciones nuevas se guardarán." : "Las conversaciones nuevas ya no se guardan. Las anteriores siguen ahí.", "ok");
+  } catch (error) {
+    setMessage(historyMessage, String(error), "error");
+  }
+  await loadSettings().catch(() => {});
+  loadHistory();
+});
+
+loadSettings().catch(() => {});
 loadHeaderAvatar();

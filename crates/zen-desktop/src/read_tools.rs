@@ -38,7 +38,7 @@ const ATTR_RECALL_ON_DATA_ACCESS: u32 = 0x40_0000;
 const CLOUD_ONLY: u32 = ATTR_OFFLINE | ATTR_RECALL_ON_OPEN | ATTR_RECALL_ON_DATA_ACCESS;
 
 /// Carpetas que no merece la pena recorrer (y que suelen ser enormes).
-const SKIPPED_DIRS: &[&str] = &["node_modules", ".git", "target", "__pycache__", ".venv", "$recycle.bin", "system volume information"];
+pub(crate) const SKIPPED_DIRS: &[&str] = &["node_modules", ".git", "target", "__pycache__", ".venv", "$recycle.bin", "system volume information"];
 
 /// Extensiones de texto que se miran por dentro al buscar.
 const SEARCHABLE: &[&str] = &[
@@ -46,7 +46,7 @@ const SEARCHABLE: &[&str] = &[
     "cs", "go", "php", "rb", "sh", "bat", "ini", "cfg", "conf", "log", "yaml", "yml", "toml", "sql", "tex", "srt", "lua",
 ];
 
-fn has_cloud_only_flag(attributes: u32) -> bool {
+pub(crate) fn has_cloud_only_flag(attributes: u32) -> bool {
     attributes & CLOUD_ONLY != 0
 }
 
@@ -275,7 +275,7 @@ struct SearchStats {
     stopped_by: Option<&'static str>,
 }
 
-fn is_hidden_or_system(attributes: u32, name: &str) -> bool {
+pub(crate) fn is_hidden_or_system(attributes: u32, name: &str) -> bool {
     name.starts_with('.') || attributes & (ATTR_HIDDEN | ATTR_SYSTEM) != 0
 }
 

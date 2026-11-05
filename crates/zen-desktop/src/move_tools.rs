@@ -9,9 +9,9 @@ use crate::args::{check_keys, invalid, location_properties, optional_str, parse_
 use crate::locations::{display_path, Locations};
 use crate::names::validate_name;
 
-struct MovePlan {
-    from: PathBuf,
-    to: PathBuf,
+pub(crate) struct MovePlan {
+    pub(crate) from: PathBuf,
+    pub(crate) to: PathBuf,
 }
 
 pub struct MoveFile {
@@ -24,7 +24,7 @@ impl MoveFile {
     }
 
     /// Comprueba todo lo comprobable sin tocar nada. El destino nunca se sobrescribe.
-    fn plan(&self, args: &Value) -> Result<MovePlan, ToolError> {
+    pub(crate) fn plan(&self, args: &Value) -> Result<MovePlan, ToolError> {
         check_keys(args, &["location", "subfolder", "name", "to_location", "to_subfolder", "new_name"])?;
         let source_location = parse_location(required_str(args, "location")?)?;
         let name = required_str(args, "name")?;
