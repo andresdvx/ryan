@@ -551,3 +551,12 @@ mark { padding: 0 2px; border-radius: 4px; background: rgb(var(--accent-rgb) / 0
 .risk.dangerous { color: var(--danger); background: rgba(255, 107, 99, 0.14); }
 .risk.muted { color: var(--muted); background: rgba(255, 255, 255, 0.06); font-weight: 600; }
 .apps-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* ---------- Engranaje de Ajustes en la cabecera ---------- */
+.gear-btn {
+  display: grid; width: 26px; height: 26px; flex: none; padding: 0; place-items: center; border: 1px solid var(--line); border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05); font-size: 13px; line-height: 1; cursor: pointer;
+  transition: transform 0.25s, background 0.15s, border-color 0.15s;
+}
+.gear-btn:hover { background: rgb(var(--accent-rgb) / 0.18); border-color: rgb(var(--accent-rgb) / 0.55); transform: rotate(60deg); }
+.gear-btn.active { background: rgb(var(--accent-rgb) / 0.32); border-color: rgb(var(--accent-rgb) / 0.8); }

@@ -170,3 +170,31 @@ listen("character-state", (e) => {
 });
 
 reset();
+
+// El color de la barra sigue al personaje elegido, igual que el chat (los colores salen de assets/characters.json).
+function hexToRgb(hex) {
+  const match = /^#([0-9a-f]{6})$/i.exec(hex ?? "");
+  if (!match) return null;
+  const n = parseInt(match[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+async function applyTheme() {
+  try {
+    const manifest = await fetch("assets/characters.json").then((response) => response.json());
+    const id = await invoke("get_character");
+    const entry = manifest.characters.find((c) => c.id === id) ?? manifest.characters[0];
+    const root = document.documentElement.style;
+    const accent = hexToRgb(entry.accent);
+    const accent2 = hexToRgb(entry.accent2);
+    if (accent) root.setProperty("--accent-rgb", accent.join(" "));
+    else root.removeProperty("--accent-rgb");
+    if (accent2) root.setProperty("--accent-2-rgb", accent2.join(" "));
+    else root.removeProperty("--accent-2-rgb");
+  } catch {
+    // sin el manifiesto se queda el violeta de siempre
+  }
+}
+applyTheme();
+listen("character-changed", applyTheme);
+listen("quick-opened", applyTheme);

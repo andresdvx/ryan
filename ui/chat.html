@@ -16,18 +16,17 @@
       <button id="model-pill" class="model-pill" type="button" title="Cambiar de modelo" aria-haspopup="menu" aria-expanded="false" hidden>
         <span id="model-pill-text"></span><span class="caret" aria-hidden="true">▾</span>
       </button>
+      <button id="settings-btn" class="gear-btn" type="button" title="Ajustes" aria-label="Ajustes" aria-pressed="false">⚙️</button>
       </div>
     </div>
     <button id="close" title="Cerrar (Esc)" aria-label="Cerrar">&times;</button>
   </header>
   <div id="model-menu" class="model-menu" role="menu" aria-label="Modelo de IA" hidden></div>
   <nav class="tabs" role="tablist">
-    <button class="tab" role="tab" data-tab="today" aria-selected="false" title="Hoy">🏠 <span class="tab-label">Hoy</span></button>
     <button class="tab active" role="tab" data-tab="chat" aria-selected="true" title="Charla">💬 <span class="tab-label">Charla</span></button>
+    <button class="tab" role="tab" data-tab="today" aria-selected="false" title="Hoy">🏠 <span class="tab-label">Hoy</span></button>
     <button class="tab" role="tab" data-tab="reminders" aria-selected="false" title="Recordatorios">⏰ <span class="tab-label">Recordatorios</span> <span id="reminder-badge" class="count" hidden></span></button>
-    <button class="tab" role="tab" data-tab="history" aria-selected="false" title="Historial">🕘 <span class="tab-label">Historial</span></button>
-    <button class="tab" role="tab" data-tab="settings" aria-selected="false">⚙️ Ajustes</button>
-  </nav>
+    <button class="tab" role="tab" data-tab="history" aria-selected="false" title="Historial">🕘 <span class="tab-label">Historial</span></button></nav>
 
   <div id="view-chat" class="view">
     <main id="history"></main>

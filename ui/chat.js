@@ -512,7 +512,16 @@ const views = {
   settings: document.getElementById("view-settings"),
 };
 
+// Ajustes vive en el engranaje de la cabecera, no entre las pestañas: se recuerda la pestaña anterior para volver a ella.
+const settingsBtn = document.getElementById("settings-btn");
+let currentTab = "chat";
+let tabBeforeSettings = "chat";
+
 function showTab(name) {
+  if (name === "settings" && currentTab !== "settings") tabBeforeSettings = currentTab;
+  currentTab = name;
+  settingsBtn.classList.toggle("active", name === "settings");
+  settingsBtn.setAttribute("aria-pressed", String(name === "settings"));
   tabs.forEach((tab) => {
     const active = tab.dataset.tab === name;
     tab.classList.toggle("active", active);
@@ -528,6 +537,8 @@ function showTab(name) {
   else if (name === "chat") input.focus();
 }
 tabs.forEach((tab) => tab.addEventListener("click", () => showTab(tab.dataset.tab)));
+// El engranaje abre Ajustes; si ya están abiertos, vuelve a lo que se estaba viendo.
+settingsBtn.addEventListener("click", () => showTab(currentTab === "settings" ? tabBeforeSettings : "settings"));
 
 // --- Recordatorios ---
 const reminderForm = document.getElementById("reminder-form");

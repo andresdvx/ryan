@@ -81,7 +81,7 @@ Trae siete personajes; puedes [añadir los tuyos](#añadir-un-personaje).
 | --- | --- |
 | **Personaje** | Se anima según lo que hace (reposo, pensando, trabajando, contenta…), pasea por el escritorio, mira hacia el cursor, avisa con la batería baja y sugiere descansos. Su tono cambia con la hora, la batería y cuánto llevas trabajando, y reacciona cuando termina una descarga, conectas una memoria USB o se acerca un recordatorio. |
 | **Chat** | Las respuestas se escriben en directo (con Ollama), una paleta de comandos al escribir `/`, y un selector de proveedor y modelo en la cabecera. Puedes **pegar una captura** (Ctrl + V) o pulsar 👁 para **mirar una ventana**: la ves antes de adjuntarla (con un modelo con visión). |
-| **Barra rápida** | Un campo pequeño sobre el escritorio (atajo **Win + Shift + J**) para pedir algo sin abrir el chat. La respuesta aparece ahí, y si algo necesita tu permiso se abre el chat. Todo queda también en el historial. |
+| **Barra rápida** | Un campo pequeño sobre el escritorio (atajo **Win + Shift + J**) para pedir algo sin abrir el chat. La respuesta aparece ahí, y si algo necesita tu permiso se abre el chat. Todo queda también en el historial. Toma los colores del personaje que elijas. |
 | **Modos** | **Normal, Trabajo, Descanso y Concentración**: cambian a la vez cómo se comporta la mascota (paseos, comentarios, sonidos) y el tono de las respuestas, y los atajos de *Hoy*. Se aplican por encima de tus ajustes: al volver a Normal todo queda como lo tenías. |
 | **Hoy** | Una pestaña con lo importante de un vistazo: lo que suena (con controles), tus próximos recordatorios, batería, memoria y espacio en disco, tu última conversación y atajos para pedir cosas con un clic. |
 | **Historial** | Tus conversaciones se guardan en tu equipo. Puedes buscarlas (sin importar mayúsculas ni tildes), releerlas y **continuarlas**: Ryan recupera lo que hablasteis. Se puede apagar y borrar en cualquier momento. |
@@ -133,7 +133,7 @@ cd ryan
 
 ## Configuración
 
-No hay archivos de configuración que editar a mano: todo se hace desde la propia aplicación, en la pestaña **Ajustes** del chat.
+No hay archivos de configuración que editar a mano: todo se hace desde la propia aplicación, con el engranaje ⚙️ de la cabecera del chat (junto al modelo en uso).
 
 ### 1. Elige tu IA
 

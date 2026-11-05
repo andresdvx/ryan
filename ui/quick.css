@@ -3,8 +3,9 @@
   --accent-rgb: 139 123 255;
   --accent-2-rgb: 91 140 255;
   --accent: rgb(var(--accent-rgb));
-  --bg: #1d1b26;
-  --card: #26232f;
+  /* Los fondos se tiñen con el color del personaje, como en el chat. */
+  --bg: color-mix(in srgb, var(--accent) 7%, #1a1822);
+  --card: color-mix(in srgb, var(--accent) 12%, #25222e);
   --line: rgba(255, 255, 255, 0.1);
   --text: #f1eef6;
   --muted: #a8a2b8;
