@@ -60,8 +60,8 @@ mod tests {
         let catalog = catalog();
         assert!(catalog.characters.len() >= 2);
         assert!(is_known(default_id()));
-        assert!(is_known("poring") && is_known("zen") && is_known("drako") && !is_known("fairy"));
-        assert!(!is_known("") && !is_known("../zen") && !is_known("Poring"), "los identificadores son exactos");
+        assert!(is_known("peter_panda") && is_known("drako") && !is_known("zen") && !is_known("poring") && !is_known("fairy"));
+        assert!(!is_known("") && !is_known("../drako") && !is_known("Drako"), "los identificadores son exactos");
     }
 
     #[test]
