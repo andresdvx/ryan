@@ -10,6 +10,15 @@ El flujo es siempre el mismo:
 2. La importas con `tools/import_sprites.py`: corta los frames, quita el fondo, los alinea y declara el estado.
 3. Recompilas (`cargo build`) y listo.
 
+## Prompts ya preparados por personaje
+
+Cada personaje tiene su archivo con un prompt por estado y el comando para importar cada hoja:
+[Peter Panda](prompts-peter-panda.md), [Pingu](prompts-pingu.md), [Bandit](prompts-bandit.md),
+[Mochi](prompts-mochi.md), [Ellie](prompts-ellie.md) y [Drako](prompts-drako.md).
+
+Para un personaje nuevo (o si cambias el diseño de uno), se generan con
+`python tools/make_prompts.py <id> --desc "zorro azul con bufanda amarilla" --flutter "la bufanda" --tail "la cola"`.
+
 ## Qué frames pedir
 
 | Estado | Cuándo se ve | Frames | Qué dibujar |
