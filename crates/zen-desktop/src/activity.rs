@@ -161,6 +161,12 @@ pub fn undo_for(locations: &Locations, report: &ToolReport) -> Option<Undo> {
         }
         "set_reminder" => Some(Undo { tool: "cancel_reminder".into(), args: json!({ "id": report.data["id"].as_u64()? }), label: "Cancelar este recordatorio".into() }),
         "remember" => Some(Undo { tool: "forget".into(), args: json!({ "id": report.data["id"].as_u64()? }), label: "Olvidar este recuerdo".into() }),
+        "add_task" => Some(Undo { tool: "delete_task".into(), args: json!({ "id": report.data["id"].as_u64()? }), label: "Quitar esta tarea".into() }),
+        "complete_task" => {
+            let done = report.data["done"].as_bool()?;
+            let label = if done { "Volver a abrir esta tarea" } else { "Volver a marcarla como hecha" };
+            Some(Undo { tool: "complete_task".into(), args: json!({ "id": report.data["id"].as_u64()?, "done": !done }), label: label.into() })
+        }
         _ => None,
     }
 }
