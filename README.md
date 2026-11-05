@@ -284,6 +284,8 @@ Lo que escribes en el chat se envía al proveedor de IA que hayas elegido (con O
    "states": { "sleeping": { "sequence": [3, 10, 11, 10] }, "thinking": { "sequence": [1, 5, 6, 1, 8, 12] } }
    ```
 
+   Si quieres que camine, duerma o salte con frames **dibujados de verdad** (no solo reutilizando los que ya tiene), genera una hoja de sprites por estado y súbela con `python tools/import_sprites.py <personaje> <estado> hoja.png --cols N`: corta los frames, quita el fondo, los alinea y declara el estado. La guía, con el prompt para la IA y los frames que conviene pedir por estado, está en [docs/animaciones.md](docs/animaciones.md).
+
 ### Añadir una herramienta
 
 Cada herramienta implementa el trait `Tool` de `zen-core` (nombre, esquema de parámetros, nivel de riesgo, validación, vista previa y ejecución) y se registra en `crates/zen-desktop/src/lib.rs`. El resto, incluidos los permisos y la confirmación, lo gestiona el sistema.

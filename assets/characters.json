@@ -16,15 +16,17 @@
       "preview_frame": 1,
       "speed": 1.0,
       "states": {
-        "listening": { "sequence": [4, 1, 4, 12, 4, 10] },
-        "sleeping": { "sequence": [3, 9, 10, 4] },
-        "thinking": { "sequence": [1, 6, 2, 6, 1, 12] },
-        "working": { "sequence": [12, 7, 12, 1] },
-        "success": { "sequence": [8, 7, 8, 4] },
-        "happy": { "sequence": [8, 4, 8, 7] },
-        "surprised": { "sequence": [2, 8, 2, 6] },
-        "interacting": { "sequence": [1, 8, 1, 7] },
-        "alert": { "sequence": [2, 6, 2, 7] }
+        "listening": { "folder": "peter-panda/listening", "pattern": "listening_{nn}.png", "frames": 6, "ms": 250 },
+        "sleeping": { "folder": "peter-panda/sleeping", "pattern": "sleeping_{nn}.png", "frames": 6, "ms": 600 },
+        "thinking": { "folder": "peter-panda/thinking", "pattern": "thinking_{nn}.png", "frames": 6, "ms": 250 },
+        "working": { "folder": "peter-panda/working", "pattern": "working_{nn}.png", "frames": 4, "ms": 225 },
+        "success": { "folder": "peter-panda/success", "pattern": "success_{nn}.png", "frames": 6, "ms": 150 },
+        "happy": { "folder": "peter-panda/happy", "pattern": "happy_{nn}.png", "frames": 8, "ms": 140 },
+        "surprised": { "folder": "peter-panda/surprised", "pattern": "surprised_{nn}.png", "frames": 4, "ms": 150 },
+        "interacting": { "folder": "peter-panda/interacting", "pattern": "interacting_{nn}.png", "frames": 4, "ms": 250 },
+        "alert": { "folder": "peter-panda/alert", "pattern": "alert_{nn}.png", "frames": 4, "ms": 175 },
+        "walking": { "folder": "peter-panda/walking", "pattern": "walking_{nn}.png", "frames": 6, "ms": 150 },
+        "idle": { "folder": "peter-panda/idle", "pattern": "idle_{nn}.png", "frames": 4, "ms": 450 }
       }
     },
     {
