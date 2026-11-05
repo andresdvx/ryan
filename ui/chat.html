@@ -10,14 +10,24 @@
     <div class="badge" data-tauri-drag-region><img id="header-avatar" alt="" hidden></div>
     <div class="identity" data-tauri-drag-region>
       <span id="assistant-title" class="title" data-tauri-drag-region>Ryan</span>
+      <div class="subrow" data-tauri-drag-region>
       <span id="status" class="status" data-tauri-drag-region>Listo</span>
+      <button id="profile-badge" class="profile-badge" type="button" title="Modo activo: pulsa para cambiarlo" hidden></button>
+      <button id="model-pill" class="model-pill" type="button" title="Cambiar de modelo" aria-haspopup="menu" aria-expanded="false" hidden>
+        <span id="model-pill-text"></span><span class="caret" aria-hidden="true">▾</span>
+      </button>
+      <button id="settings-btn" class="gear-btn" type="button" title="Ajustes" aria-label="Ajustes" aria-pressed="false">⚙️</button>
+      </div>
     </div>
     <button id="close" title="Cerrar (Esc)" aria-label="Cerrar">&times;</button>
   </header>
+  <div id="model-menu" class="model-menu" role="menu" aria-label="Modelo de IA" hidden></div>
   <nav class="tabs" role="tablist">
-    <button class="tab active" role="tab" data-tab="chat" aria-selected="true">💬 Charla</button>
-    <button class="tab" role="tab" data-tab="settings" aria-selected="false">⚙️ Ajustes</button>
-  </nav>
+    <button class="tab active" role="tab" data-tab="chat" aria-selected="true" title="Charla">💬 <span class="tab-label">Charla</span></button>
+    <button class="tab" role="tab" data-tab="today" aria-selected="false" title="Hoy">🏠 <span class="tab-label">Hoy</span></button>
+    <button class="tab" role="tab" data-tab="reminders" aria-selected="false" title="Recordatorios">⏰ <span class="tab-label">Recordatorios</span> <span id="reminder-badge" class="count" hidden></span></button>
+    <button class="tab" role="tab" data-tab="history" aria-selected="false" title="Historial">🕘 <span class="tab-label">Historial</span></button>
+    <button class="tab" role="tab" data-tab="activity" aria-selected="false" title="Actividad">🧾 <span class="tab-label">Actividad</span></button></nav>
 
   <div id="view-chat" class="view">
     <main id="history"></main>
@@ -38,11 +48,177 @@
         <button type="button" id="player-next" title="Siguiente" aria-label="Siguiente"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18l8.5-6L6 6zM16 6v12h2V6z"/></svg></button>
       </div>
     </section>
+    <div class="palette-anchor"><div id="palette" class="palette" role="listbox" aria-label="Comandos" hidden></div></div>
+    <div class="palette-anchor">
+      <div id="look-panel" class="look-panel" role="dialog" aria-label="Mirar una ventana" hidden>
+        <div class="look-head"><strong>Mirar una ventana</strong><button type="button" id="look-close" class="look-x" aria-label="Cerrar">✕</button></div>
+        <div id="look-status" class="hint" role="status">Capturando…</div>
+        <img id="look-thumb" class="look-thumb" alt="Vista previa de la ventana que se va a enviar" hidden>
+        <div id="look-caption" class="hint"></div>
+        <select id="look-select" aria-label="Elegir otra ventana"></select>
+        <p class="hint">Solo se envía si pulsas «Adjuntar» y mandas el mensaje. La imagen la verá únicamente el modelo de IA que estás usando.</p>
+        <div class="look-actions">
+          <button type="button" id="look-attach" disabled>Adjuntar a mi mensaje</button>
+          <button type="button" id="look-cancel" class="secondary">Cancelar</button>
+        </div>
+      </div>
+    </div>
+    <div id="attachments" class="attachments" aria-label="Imágenes adjuntas" hidden></div>
     <form id="form" autocomplete="off">
+      <button type="button" id="look-btn" class="icon-btn" title="Mirar una ventana: la captura y te la enseña antes de enviarla" aria-label="Mirar una ventana">👁</button>
       <input id="input" type="text" placeholder="Cuéntame qué necesitas…" autofocus>
       <button type="submit" id="send" aria-label="Enviar" title="Enviar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12.6 2-12.6 2z"/></svg></button>
     </form>
   </div>
+
+  <section id="view-today" class="view" hidden>
+    <div class="panels">
+      <div class="panel">
+        <div class="card hello">
+          <div id="today-date" class="date"></div>
+          <div id="today-greeting" class="big"></div>
+        </div>
+
+        <div class="card field">
+          <h3>Modo</h3>
+          <div id="profile-chips" class="profile-chips" role="radiogroup" aria-label="Modo de Ryan"></div>
+          <p id="profile-desc" class="hint"></p>
+          <ul id="profile-changes" class="profile-changes"></ul>
+        </div>
+
+        <div id="today-media-card" class="card field" hidden>
+          <h3>Ahora suena</h3>
+          <div class="media-mini">
+            <div class="info">
+              <div id="today-media-title" class="item-title"></div>
+              <div id="today-media-sub" class="item-sub"></div>
+            </div>
+            <div class="controls">
+              <button type="button" id="today-media-prev" class="round" title="Anterior" aria-label="Anterior">⏮</button>
+              <button type="button" id="today-media-toggle" class="round main" title="Pausar" aria-label="Pausar">⏸</button>
+              <button type="button" id="today-media-next" class="round" title="Siguiente" aria-label="Siguiente">⏭</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card field">
+          <h3>Próximos recordatorios <button type="button" id="today-all-reminders" class="link-btn">Ver todos</button></h3>
+          <div id="today-reminders" class="reminders"></div>
+          <p id="today-reminders-empty" class="hint empty">Nada programado. Pídeselo en el chat: «recuérdame beber agua en 20 minutos».</p>
+        </div>
+
+        <div class="card field">
+          <h3>Tu equipo</h3>
+          <div id="today-stats" class="stats"></div>
+        </div>
+
+        <div id="today-last-card" class="card field" hidden>
+          <h3>Última conversación</h3>
+          <div class="last-conv">
+            <div class="info">
+              <div id="today-last-title" class="item-title"></div>
+              <div id="today-last-sub" class="item-sub"></div>
+            </div>
+            <button type="button" id="today-last-resume">Continuar</button>
+          </div>
+        </div>
+
+        <div class="card field">
+          <h3>Atajos</h3>
+          <div id="today-shortcuts" class="shortcuts"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-activity" class="view" hidden>
+    <div class="panels">
+      <div class="panel">
+        <div class="card field">
+          <h3>Lo que ha hecho Ryan <span id="activity-count" class="count"></span></h3>
+          <p class="hint">Cada acción con su detalle. Se guarda solo en este equipo y sin contenido privado (lo que escribes en otras apps o lees de un archivo no se guarda). Donde se puede, tienes un botón para deshacerla.</p>
+          <input id="activity-search" type="search" placeholder="Buscar en la actividad…" spellcheck="false" autocomplete="off" aria-label="Buscar en la actividad">
+          <div id="activity-filters" class="profile-chips" role="radiogroup" aria-label="Filtro">
+            <button type="button" class="profile-chip" role="radio" data-filter="all" aria-checked="true">Todo</button>
+            <button type="button" class="profile-chip" role="radio" data-filter="undo" aria-checked="false">Se puede deshacer</button>
+            <button type="button" class="profile-chip" role="radio" data-filter="failed" aria-checked="false">Con problemas</button>
+          </div>
+          <div class="row"><button type="button" id="activity-clear" class="secondary">Borrar el registro</button></div>
+          <div id="activity-message" class="message" role="status"></div>
+        </div>
+        <div id="activity-list" class="acts"></div>
+        <p id="activity-empty" class="hint empty" hidden></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-history" class="view" hidden>
+    <div class="panels">
+      <div id="history-list-view" class="panel">
+        <div class="card field">
+          <h3>Conversaciones guardadas</h3>
+          <input id="history-search" type="search" placeholder="Buscar en tus conversaciones…" spellcheck="false" autocomplete="off" aria-label="Buscar en el historial">
+          <label class="switch"><input type="checkbox" id="history-save"><span class="track"></span><span class="text">Guardar mis conversaciones en este equipo</span></label>
+          <div class="row"><button type="button" id="history-clear" class="secondary">Borrar todo el historial</button></div>
+          <div id="history-message" class="message" role="status"></div>
+        </div>
+        <div id="history-items" class="convs"></div>
+        <p id="history-empty" class="hint empty" hidden></p>
+      </div>
+
+      <div id="history-detail-view" class="panel" hidden>
+        <div class="card field">
+          <div class="row detail-head">
+            <button type="button" id="history-back" class="secondary">← Volver</button>
+            <div class="detail-title"><strong id="detail-title"></strong><span id="detail-meta" class="hint"></span></div>
+          </div>
+          <div class="row">
+            <button type="button" id="history-resume">Continuar esta conversación</button>
+            <button type="button" id="history-delete" class="secondary">Borrar</button>
+          </div>
+          <div id="detail-message" class="message" role="status"></div>
+        </div>
+        <div id="detail-messages" class="transcript"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-reminders" class="view" hidden>
+    <div class="panels">
+      <div class="panel">
+        <form id="reminder-form" class="card field" autocomplete="off">
+          <h3>Nuevo recordatorio</h3>
+          <input id="reminder-text" type="text" maxlength="200" spellcheck="true" placeholder="¿Qué quieres que te recuerde?" aria-label="Qué recordar">
+          <div class="row when">
+            <select id="reminder-mode" aria-label="Cuándo">
+              <option value="in">Dentro de</option>
+              <option value="at">A las</option>
+            </select>
+            <span id="reminder-in" class="row-inline">
+              <input id="reminder-minutes" type="number" min="1" max="10080" value="30" aria-label="Minutos">
+              <span class="unit">minutos</span>
+            </span>
+            <input id="reminder-clock" type="time" value="09:00" aria-label="Hora" hidden>
+            <button type="submit" id="reminder-add">Añadir</button>
+          </div>
+          <div id="reminder-presets" class="chips" aria-label="Atajos de tiempo">
+            <button type="button" class="chip-btn" data-minutes="5">5 min</button>
+            <button type="button" class="chip-btn" data-minutes="15">15 min</button>
+            <button type="button" class="chip-btn" data-minutes="30">30 min</button>
+            <button type="button" class="chip-btn" data-minutes="60">1 h</button>
+            <button type="button" class="chip-btn" data-minutes="120">2 h</button>
+          </div>
+          <div id="reminder-message" class="message" role="status"></div>
+        </form>
+
+        <div class="card field">
+          <h3>Programados <span id="reminder-count" class="count"></span></h3>
+          <div id="reminder-list" class="reminders"></div>
+          <p id="reminder-empty" class="hint empty">Nada programado. Añade uno arriba o pídeselo al asistente en el chat: «recuérdame beber agua en 20 minutos».</p>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <section id="view-settings" class="view" hidden>
     <nav class="subtabs" role="tablist" aria-label="Secciones de ajustes">
@@ -56,6 +232,12 @@
     <div class="panels">
       <!-- Compañero -->
       <div class="panel" data-panel="pet">
+        <div class="card field">
+          <h3>Modo</h3>
+          <select id="profile-select" aria-label="Modo de Ryan"></select>
+          <p id="profile-select-desc" class="hint"></p>
+          <p class="hint">Un modo cambia a la vez cómo se comporta la mascota, los avisos y el tono de las respuestas, sin tocar tus ajustes: al volver a «Normal» todo queda como lo tenías.</p>
+        </div>
         <form id="name-form" class="card field" autocomplete="off">
           <h3>Nombre</h3>
           <div class="row">
@@ -123,6 +305,7 @@
           <div class="row">
             <button type="button" id="detect-models" class="secondary">Probar y buscar modelos</button>
           </div>
+          <label class="switch"><input type="checkbox" id="ollama-think"><span class="track"></span><span class="text">Dejar que el modelo razone antes de responder (más lento, a veces más acertado)</span></label>
           <div id="ollama-message" class="message" role="status"></div>
           <p class="hint">Corre en tu equipo y no necesita API key. Descarga un modelo con <code>ollama pull qwen3:8b</code>. Para que pueda usar herramientas, el modelo debe admitirlas (Qwen3, Llama 3.1; DeepSeek-R1 en su versión base no). No tiene búsqueda web integrada.</p>
         </form>
@@ -181,6 +364,23 @@
           <p id="shortcut-hint" class="hint"></p>
         </form>
 
+        <form id="quick-form" class="card field" autocomplete="off">
+          <h3>Atajo de la barra rápida</h3>
+          <p class="hint">Un campo pequeño sobre el escritorio para pedir algo sin abrir el chat. Si algo necesita tu permiso, se abre el chat.</p>
+          <div class="mods">
+            <label class="chip"><input type="checkbox" data-qmod="Ctrl"><span>Ctrl</span></label>
+            <label class="chip"><input type="checkbox" data-qmod="Alt"><span>Alt</span></label>
+            <label class="chip"><input type="checkbox" data-qmod="Shift"><span>Shift</span></label>
+            <label class="chip"><input type="checkbox" data-qmod="Super"><span>Win</span></label>
+          </div>
+          <div class="row">
+            <input id="quick-key" type="text" maxlength="3" spellcheck="false" aria-label="Tecla" placeholder="J">
+            <button type="submit" id="save-quick">Guardar</button>
+          </div>
+          <div id="quick-message" class="message" role="status"></div>
+          <p id="quick-hint" class="hint"></p>
+        </form>
+
         <div class="card field">
           <h3>Inicio</h3>
           <label class="switch"><input type="checkbox" id="autostart"><span class="track"></span><span class="text">Iniciar Ryan con Windows</span></label>
@@ -200,6 +400,12 @@
                 <input id="apps-filter" type="search" placeholder="Filtrar por nombre…" spellcheck="false" autocomplete="off">
                 <button type="button" id="apps-refresh" class="secondary">Actualizar</button>
               </div>
+              <div class="apps-bar">
+                <label class="check"><input type="checkbox" id="apps-only-enabled"><span>Solo activadas</span></label>
+                <button type="button" id="apps-all-on" class="secondary">Activar las que se ven</button>
+                <button type="button" id="apps-all-off" class="secondary">Desactivar las que se ven</button>
+              </div>
+              <div id="apps-count" class="hint"></div>
               <div id="apps-list" class="tools scroll"></div>
               <p id="apps-hint" class="hint"></p>
               <div id="apps-message" class="message" role="status"></div>
@@ -236,8 +442,14 @@
         </div>
 
         <div class="card field">
-          <h3>Herramientas de la IA</h3>
-          <div id="tools-list" class="tools"></div>
+          <h3>Herramientas de la IA <span id="tools-count" class="count"></span></h3>
+          <p class="hint">Desactiva lo que no quieras que pueda usar. La etiqueta indica cuándo te pide permiso: <strong>Segura</strong> se hace sola, <strong>Pide permiso</strong> te pregunta antes y <strong>Peligrosa</strong> te lo explica con detalle.</p>
+          <input id="tools-search" type="search" placeholder="Buscar herramienta…" spellcheck="false" autocomplete="off" aria-label="Buscar herramienta">
+          <div class="row">
+            <button type="button" id="tools-all-on" class="secondary">Activar las que se ven</button>
+            <button type="button" id="tools-all-off" class="secondary">Desactivar las que se ven</button>
+          </div>
+          <div id="tools-list" class="tool-groups"></div>
           <div id="tools-message" class="message" role="status"></div>
         </div>
       </div>

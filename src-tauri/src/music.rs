@@ -23,7 +23,7 @@ pub fn spawn(app: AppHandle) {
         let mut detector = MusicDetector::default();
         loop {
             // Con la reacción apagada se lee como silencio: si estaba puesta, los auriculares se quitan solos.
-            let heard = Settings::load().music_reaction && something_playing();
+            let heard = Settings::load_effective().music_reaction && something_playing();
             if let Some(playing) = detector.observe(heard) {
                 if let Some(flag) = app.try_state::<MusicFlag>() {
                     flag.0.store(playing, Ordering::Relaxed);

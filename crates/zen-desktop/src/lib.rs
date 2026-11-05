@@ -1,9 +1,14 @@
+pub mod activity;
 mod app_catalog;
 mod applications;
 mod args;
 mod browse_tools;
+pub mod attachments;
+mod cleanup_tools;
+pub mod conversations;
 mod clock;
 mod delete_tools;
+mod file_tools;
 mod fs_tools;
 pub mod input;
 mod input_tools;
@@ -31,6 +36,7 @@ pub mod usage;
 mod system_tools;
 #[cfg(test)]
 mod testutil;
+mod walk;
 mod web_tools;
 
 use std::path::PathBuf;
@@ -41,9 +47,12 @@ use zen_core::tools::ToolRegistry;
 pub use app_catalog::{is_blocked as is_blocked_app, AppCatalog, BuiltinStatus, CustomApp, DiscoveredApp};
 pub use input_tools::TOOL_NAMES as COMPUTER_CONTROL_TOOLS;
 pub use clock::{describe_span, play_alert_sound, unix_now, LocalNow};
-pub use locations::{Location, Locations};
+pub use file_tools::reveal_in_explorer;
+pub use locations::{Location, Locations, Placed};
 pub use memory::Memory;
-pub use reminders::Reminders;
+pub use reminders::{Reminders, MAX_PENDING as MAX_REMINDERS};
+pub use screen_tools::{capturable_windows, capture_for_user, UserCapture};
+pub use system_tools::system_status;
 pub use web_tools::open_url;
 pub use movement::{effective_direction, facing_towards, position_after, Facing, WalkBounds};
 
@@ -65,6 +74,14 @@ pub fn register_default_tools(
     registry.register(read_tools::SearchFiles::new(locations.clone()));
     registry.register(move_tools::MoveFile::new(locations.clone()));
     registry.register(delete_tools::DeleteFile::new(locations.clone()));
+    registry.register(file_tools::CopyFile::new(locations.clone()));
+    registry.register(file_tools::OpenPath::new(locations.clone()));
+    registry.register(file_tools::ZipFiles::new(locations.clone()));
+    registry.register(file_tools::UnzipFile::new(locations.clone()));
+    registry.register(cleanup_tools::FindLargeFiles::new(locations.clone()));
+    registry.register(cleanup_tools::FolderSizes::new(locations.clone()));
+    registry.register(cleanup_tools::FindDuplicates::new(locations.clone()));
+    registry.register(cleanup_tools::EmptyRecycleBin);
     registry.register(organize::OrganizeFolder::new(locations.clone(), journal.clone()));
     registry.register(organize::UndoOrganize::new(locations, journal));
     registry.register(app_catalog::OpenApplication::new(apps));

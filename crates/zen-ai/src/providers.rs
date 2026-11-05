@@ -1,6 +1,6 @@
 use zen_core::ai::LlmProvider;
 
-use crate::{claude, gemini, ollama, openai};
+use crate::{claude, gemini, ollama, openai, OllamaSettings};
 
 /// Servicios de IA que el usuario puede elegir.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,6 +14,11 @@ pub enum ProviderKind {
 
 impl ProviderKind {
     pub const ALL: [ProviderKind; 4] = [ProviderKind::Gemini, ProviderKind::Claude, ProviderKind::OpenAi, ProviderKind::Ollama];
+
+    /// ¿Puede este proveedor recibir imágenes? De momento solo Ollama (con un modelo con visión).
+    pub fn supports_images(self) -> bool {
+        self == ProviderKind::Ollama
+    }
 
     /// Los servicios en la nube exigen una API key; Ollama corre en el propio equipo.
     pub fn needs_key(self) -> bool {
@@ -72,13 +77,13 @@ impl ProviderKind {
         }
     }
 
-    /// `api_key` solo la usan los servicios en la nube; `ollama_url` solo Ollama.
-    pub fn create(self, api_key: String, model: String, ollama_url: &str) -> Box<dyn LlmProvider> {
+    /// `api_key` solo la usan los servicios en la nube; `local` solo Ollama.
+    pub fn create(self, api_key: String, model: String, local: &OllamaSettings) -> Box<dyn LlmProvider> {
         match self {
             ProviderKind::Gemini => Box::new(gemini::GeminiProvider::new(api_key, model)),
             ProviderKind::Claude => Box::new(claude::ClaudeProvider::new(api_key, model)),
             ProviderKind::OpenAi => Box::new(openai::OpenAiProvider::new(api_key, model)),
-            ProviderKind::Ollama => Box::new(ollama::OllamaProvider::new(ollama_url, model)),
+            ProviderKind::Ollama => Box::new(ollama::OllamaProvider::new(&local.url, model).with_think(local.think)),
         }
     }
 }
@@ -94,7 +99,7 @@ mod tests {
     fn busqueda_real_con_claves_invalidas_devuelve_el_error_de_la_api() {
         use zen_core::ai::LlmError;
         for kind in ProviderKind::ALL.into_iter().filter(|kind| kind.needs_key()) {
-            let provider = kind.create("clave-invalida".into(), kind.default_model().into(), "");
+            let provider = kind.create("clave-invalida".into(), kind.default_model().into(), &OllamaSettings::default());
             match provider.web_search("clima en Lima") {
                 Err(LlmError::Api { status, message }) => {
                     assert!([400, 401, 403].contains(&status), "{}: {status} {message}", kind.id());
@@ -128,7 +133,7 @@ mod tests {
     #[test]
     fn ollama_no_tiene_busqueda_web_integrada() {
         use zen_core::ai::LlmError;
-        let provider = ProviderKind::Ollama.create(String::new(), "qwen3:8b".into(), "http://localhost:11434");
+        let provider = ProviderKind::Ollama.create(String::new(), "qwen3:8b".into(), &OllamaSettings::default());
         assert!(matches!(provider.web_search("clima"), Err(LlmError::Unsupported(_))));
     }
 }

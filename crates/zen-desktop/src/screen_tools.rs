@@ -45,6 +45,51 @@ fn target(args: &Value) -> Result<WindowInfo, ToolError> {
     }
 }
 
+/// Una ventana capturada a petición del usuario (botón «mirar una ventana» del chat).
+pub struct UserCapture {
+    pub title: String,
+    pub process: String,
+    pub width: u32,
+    pub height: u32,
+    pub base64: String,
+}
+
+// La imagen en base64 ocupa cientos de KB: no se vuelca entera en los registros ni en los mensajes de error.
+impl std::fmt::Debug for UserCapture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "UserCapture({:?}, {}×{}, {} bytes en base64)", self.title, self.width, self.height, self.base64.len())
+    }
+}
+
+/// Ventanas que se pueden mirar: abiertas, no minimizadas y no vetadas (terminales, contraseñas, pagos…).
+pub fn capturable_windows() -> Vec<(String, String)> {
+    input::visible_windows()
+        .into_iter()
+        .filter(|w| !w.title.eq_ignore_ascii_case("program manager") && !screen::is_minimized(w.hwnd) && input::check_target(w).is_ok())
+        .map(|w| (w.title, w.process))
+        .collect()
+}
+
+/// Captura la ventana con ese título (o, sin título, la que el usuario tenía delante). Las mismas reglas de
+/// seguridad que la herramienta de la IA: nunca terminales, administradores ni ventanas de contraseñas o pagos.
+pub fn capture_for_user(query: Option<&str>) -> Result<UserCapture, String> {
+    let window = match query.map(str::trim).filter(|q| !q.is_empty()) {
+        Some(query) => {
+            let windows = input::visible_windows();
+            let found = input::find_windows(&windows, query);
+            match found.as_slice() {
+                [one] => one.clone(),
+                [] => return Err(format!("No hay ninguna ventana con «{query}» en el título.")),
+                _ => return Err(format!("Varias ventanas coinciden con «{query}»; elige una por su título completo.")),
+            }
+        }
+        None => pick_default(input::visible_windows(), screen::is_minimized).ok_or("No hay ninguna ventana abierta que mirar.")?,
+    };
+    input::check_target(&window)?;
+    let shot = screen::capture_window(window.hwnd)?;
+    Ok(UserCapture { title: window.title, process: window.process, width: shot.width, height: shot.height, base64: shot.base64() })
+}
+
 impl Tool for LookAtScreen {
     fn name(&self) -> &'static str {
         "look_at_screen"
@@ -143,6 +188,26 @@ mod tests {
         let tool = LookAtScreen::new();
         assert!(tool.validate(&json!({ "window": "zzz-no-existe-esta-ventana-zzz" })).is_err());
         assert!(tool.take_images().is_empty());
+    }
+
+    #[test]
+    fn el_usuario_no_puede_capturar_ventanas_que_no_existen_ni_ambiguas() {
+        assert!(capture_for_user(Some("zzz-no-existe-esta-ventana-zzz")).unwrap_err().contains("No hay ninguna ventana"));
+        // Las que se ofrecen para elegir nunca incluyen terminales ni el escritorio.
+        assert!(capturable_windows().iter().all(|(title, process)| !title.eq_ignore_ascii_case("program manager") && !input::is_blocked_process(process)));
+    }
+
+    /// Captura de verdad la ventana cuyo título contiene `ZEN_TEST_WINDOW` y comprueba que sale un PNG.
+    /// Se ejecuta con `cargo test -p zen-desktop -- --ignored --nocapture captura_del_usuario`.
+    #[test]
+    #[ignore = "captura una ventana real"]
+    fn captura_del_usuario_real() {
+        use base64::Engine;
+        let query = std::env::var("ZEN_TEST_WINDOW").expect("falta ZEN_TEST_WINDOW");
+        let capture = capture_for_user(Some(&query)).expect("la captura debería funcionar");
+        let bytes = base64::engine::general_purpose::STANDARD.decode(&capture.base64).unwrap();
+        println!("«{}» ({}): {}×{}, {} KB", capture.title, capture.process, capture.width, capture.height, bytes.len() / 1024);
+        assert!(crate::attachments::validate_image("image/png", &capture.base64).is_ok(), "lo capturado pasa la misma validación que lo que llega del chat");
     }
 
     #[test]

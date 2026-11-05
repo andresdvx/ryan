@@ -126,6 +126,18 @@ impl std::error::Error for LlmError {}
 pub trait LlmProvider: Send + Sync {
     fn generate(&self, system: &str, history: &[Message], tools: &[ToolSpec]) -> Result<LlmResponse, LlmError>;
 
+    /// Como `generate`, pero avisa con `on_text` de cada trozo de texto según llega (la respuesta se ve escribirse).
+    /// Por defecto no hay respuesta en directo: se espera la respuesta entera y `on_text` no se llama.
+    fn generate_stream(
+        &self,
+        system: &str,
+        history: &[Message],
+        tools: &[ToolSpec],
+        _on_text: &mut dyn FnMut(&str),
+    ) -> Result<LlmResponse, LlmError> {
+        self.generate(system, history, tools)
+    }
+
     /// ¿Sabe este proveedor recibir imágenes (`Message::Image`)? Si no, no se le ofrecen las herramientas que las producen.
     fn supports_images(&self) -> bool {
         false

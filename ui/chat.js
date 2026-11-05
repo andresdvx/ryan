@@ -10,6 +10,9 @@ const statusEl = document.getElementById("status");
 let typingEl = null;
 let busyState = null; // "thinking" | "working" | null
 let pendingConfirmations = 0;
+// Burbuja de la respuesta que se está escribiendo en directo (null si no hay ninguna).
+let streamEl = null;
+let streamText = "";
 
 function addToHistory(el) {
   history.insertBefore(el, typingEl); // con typingEl nulo, equivale a añadir al final
@@ -77,7 +80,8 @@ function addCopyButton(el, text) {
 // Los avisos con icono (✔ ✖ ⏰ 🔋) se muestran tal cual; el resto de lo que dice el asistente admite formato.
 const PLAIN_PREFIX = /^(✔|✖|⏰|🔋|🔌|⚠)/u;
 
-function addMessage(role, text) {
+// `at` (segundos desde 1970) permite mostrar la hora original al recuperar una conversación guardada.
+function buildMessage(role, text, at) {
   const el = document.createElement("div");
   el.className = `msg ${role}`;
   if (role.startsWith("assistant") && !PLAIN_PREFIX.test(text) && window.renderRich) {
@@ -91,8 +95,29 @@ function addMessage(role, text) {
   addCopyButton(el, text);
   const time = document.createElement("span");
   time.className = "time";
-  time.textContent = new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+  time.textContent = new Date(at ? at * 1000 : Date.now()).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
   el.append(time);
+  return el;
+}
+
+function addMessage(role, text) {
+  addToHistory(buildMessage(role, text));
+}
+
+// Un mensaje del usuario con las miniaturas de las imágenes que adjuntó.
+function addUserMessage(text, images = []) {
+  const el = buildMessage("user", text);
+  if (images.length) {
+    const strip = document.createElement("div");
+    strip.className = "attached";
+    for (const image of images) {
+      const thumb = document.createElement("img");
+      thumb.src = `data:${image.mime};base64,${image.data}`;
+      thumb.alt = image.label || "Imagen adjunta";
+      strip.append(thumb);
+    }
+    el.insertBefore(strip, el.firstChild);
+  }
   addToHistory(el);
 }
 
@@ -113,7 +138,8 @@ function typingPhrase() {
 
 function renderTyping() {
   // Mientras se espera la respuesta del usuario a una confirmación no se aparenta estar ocupado.
-  const show = busyState !== null && pendingConfirmations === 0;
+  // Con texto escribiéndose ya no hacen falta los puntitos de espera.
+  const show = busyState !== null && pendingConfirmations === 0 && !streamEl;
   statusEl.dataset.busy = String(show);
   if (!show) {
     typingEl?.remove();
@@ -189,6 +215,7 @@ function remember(text) {
 
 input.addEventListener("keydown", (e) => {
   if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+  if (!palette.hidden) return; // con la paleta abierta, las flechas eligen comando
   if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
   if (e.key === "ArrowUp") {
     if (!sent.length || recallIndex === 0) return;
@@ -215,19 +242,28 @@ input.addEventListener("input", () => (recallIndex = null));
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
-  if (!text) return;
-  remember(text);
+  const attached = pendingImages.splice(0);
+  if (!text && !attached.length) return;
+  attachmentsEl.querySelector(".attach-note")?.remove();
   recallIndex = null;
   input.value = "";
+  hidePalette();
+  closeLook();
+  renderAttachments();
+  // «/modelo» no se envía a la IA: abre el selector de modelo de la cabecera.
+  if (text.toLowerCase() === "/modelo" && !attached.length) return openModelMenu();
+  if (text) remember(text);
   hideIdeas();
   // La API key no debe quedar a la vista en el historial.
-  addMessage("user", text.startsWith("/key ") ? "/key ••••••••" : text);
-  invoke("submit_message", { text });
+  const shown = text.startsWith("/key ") ? "/key ••••••••" : text || "Mira esta imagen y dime qué ves.";
+  addUserMessage(shown, attached);
+  invoke("submit_message", { text, images: attached.map(({ mime, data }) => ({ mime, data })) });
 });
 
 document.getElementById("close").addEventListener("click", () => invoke("hide_chat"));
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") invoke("hide_chat");
+  // Escape cierra primero lo que esté abierto (paleta, selector de modelo) y solo después la ventana.
+  if (e.key === "Escape" && !closeOverlays()) invoke("hide_chat");
 });
 appWindow.onFocusChanged(({ payload: focused }) => {
   if (focused) input.focus();
@@ -308,6 +344,50 @@ window.__TAURI__.event.listen("character-state", (e) => {
   setBusy(midTask ? "working" : state === "thinking" || state === "working" ? state : null);
 });
 window.__TAURI__.event.listen("chat-log", (e) => addMessage("assistant", e.payload));
+
+// Respuesta en directo: el texto va apareciendo en una burbuja y, al terminar, esta se sustituye por el mensaje
+// completo (ya con formato). Si se interrumpe, lo escrito se queda marcado como incompleto.
+function streamDelta(delta) {
+  const nearBottom = history.scrollHeight - history.scrollTop - history.clientHeight < 80;
+  if (!streamEl) {
+    streamEl = document.createElement("div");
+    streamEl.className = "msg assistant streaming";
+    streamText = "";
+    renderTyping();
+    addToHistory(streamEl);
+  }
+  streamText += delta;
+  streamEl.textContent = streamText;
+  if (nearBottom) history.scrollTop = history.scrollHeight;
+}
+
+// Cierra la burbuja en directo. Devuelve false si no había ninguna abierta.
+function endStream(finalText) {
+  const el = streamEl;
+  streamEl = null;
+  streamText = "";
+  if (!el) return false;
+  if (finalText) {
+    el.replaceWith(buildMessage("assistant", finalText));
+  } else if (el.textContent.trim()) {
+    el.classList.replace("streaming", "interrupted");
+  } else {
+    el.remove();
+  }
+  renderTyping();
+  history.scrollTop = history.scrollHeight;
+  return true;
+}
+window.__TAURI__.event.listen("chat-stream", (e) => streamDelta(e.payload));
+window.__TAURI__.event.listen("chat-final", (e) => {
+  if (!endStream(e.payload)) addMessage("assistant", e.payload);
+});
+window.__TAURI__.event.listen("chat-stream-abort", () => endStream(null));
+// Lo que se pide desde la barra rápida también queda en la conversación del chat.
+window.__TAURI__.event.listen("quick-user-message", (e) => {
+  hideIdeas();
+  addUserMessage(e.payload);
+});
 window.__TAURI__.event.listen("reminder", (e) => addMessage("assistant reminder", `⏰ ${e.payload}`));
 function showConfirmation({ id, tool, preview, risk, detailed }) {
   const card = document.createElement("div");
@@ -344,7 +424,10 @@ function showConfirmation({ id, tool, preview, risk, detailed }) {
   card.append(title, body, actions);
   addToHistory(card);
 }
-window.__TAURI__.event.listen("confirmation-request", (e) => showConfirmation(e.payload));
+window.__TAURI__.event.listen("confirmation-request", (e) => {
+  showTab("chat");
+  showConfirmation(e.payload);
+});
 
 // Avatar de la cabecera: el personaje elegido (se actualiza al cambiarlo en Ajustes).
 const headerAvatar = document.getElementById("header-avatar");
@@ -424,19 +507,220 @@ window.__TAURI__.event.listen("character-changed", loadHeaderAvatar);
 
 // --- Pestañas ---
 const tabs = document.querySelectorAll(".tab");
-const views = { chat: document.getElementById("view-chat"), settings: document.getElementById("view-settings") };
+const views = {
+  today: document.getElementById("view-today"),
+  history: document.getElementById("view-history"),
+  activity: document.getElementById("view-activity"),
+  chat: document.getElementById("view-chat"),
+  reminders: document.getElementById("view-reminders"),
+  settings: document.getElementById("view-settings"),
+};
+
+// Ajustes vive en el engranaje de la cabecera, no entre las pestañas: se recuerda la pestaña anterior para volver a ella.
+const settingsBtn = document.getElementById("settings-btn");
+let currentTab = "chat";
+let tabBeforeSettings = "chat";
 
 function showTab(name) {
+  if (name === "settings" && currentTab !== "settings") tabBeforeSettings = currentTab;
+  currentTab = name;
+  settingsBtn.classList.toggle("active", name === "settings");
+  settingsBtn.setAttribute("aria-pressed", String(name === "settings"));
   tabs.forEach((tab) => {
     const active = tab.dataset.tab === name;
     tab.classList.toggle("active", active);
     tab.setAttribute("aria-selected", String(active));
   });
   Object.entries(views).forEach(([key, view]) => (view.hidden = key !== name));
+  if (name === "reminders") openReminders();
+  else closeReminders();
+  if (name === "today") openToday();
+  else closeToday();
+  if (name === "history") openHistory();
+  if (name === "activity") openActivity();
   if (name === "settings") loadSettings();
-  else input.focus();
+  else if (name === "chat") input.focus();
 }
 tabs.forEach((tab) => tab.addEventListener("click", () => showTab(tab.dataset.tab)));
+// El engranaje abre Ajustes; si ya están abiertos, vuelve a lo que se estaba viendo.
+settingsBtn.addEventListener("click", () => showTab(currentTab === "settings" ? tabBeforeSettings : "settings"));
+
+// --- Recordatorios ---
+const reminderForm = document.getElementById("reminder-form");
+const reminderText = document.getElementById("reminder-text");
+const reminderMode = document.getElementById("reminder-mode");
+const reminderIn = document.getElementById("reminder-in");
+const reminderMinutes = document.getElementById("reminder-minutes");
+const reminderClock = document.getElementById("reminder-clock");
+const reminderAdd = document.getElementById("reminder-add");
+const reminderPresets = document.getElementById("reminder-presets");
+const reminderMessage = document.getElementById("reminder-message");
+const reminderList = document.getElementById("reminder-list");
+const reminderEmpty = document.getElementById("reminder-empty");
+const reminderCount = document.getElementById("reminder-count");
+const reminderBadge = document.getElementById("reminder-badge");
+let reminders = [];
+let reminderMax = 50;
+let reminderTick = null;
+
+// «en 12 min», «en 2 h 5 min», «en 3 d».
+function relativeTime(seconds) {
+  if (seconds <= 0) return "ahora";
+  if (seconds < 60) return "en menos de 1 min";
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `en ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  if (hours < 24) return restMinutes ? `en ${hours} h ${restMinutes} min` : `en ${hours} h`;
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours ? `en ${days} d ${restHours} h` : `en ${days} d`;
+}
+
+// «Hoy 19:30», «Mañana 08:00», «Jueves 5 nov 10:15».
+function whenLabel(due) {
+  const date = new Date(due * 1000);
+  const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((dayStart(date) - dayStart(new Date())) / 86400000);
+  const time = date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+  if (days <= 0) return `Hoy ${time}`;
+  if (days === 1) return `Mañana ${time}`;
+  const day = date.toLocaleDateString("es", { weekday: "long", day: "numeric", month: "short" });
+  return `${day.charAt(0).toUpperCase()}${day.slice(1)} ${time}`;
+}
+
+function reminderRow(item) {
+  const row = document.createElement("div");
+  row.className = "reminder";
+  row.dataset.due = String(item.due);
+
+  const when = document.createElement("div");
+  when.className = "when";
+  const label = document.createElement("strong");
+  label.textContent = whenLabel(item.due);
+  const left = document.createElement("span");
+  left.className = "left";
+  when.append(label, left);
+
+  const text = document.createElement("div");
+  text.className = "text";
+  text.textContent = item.text;
+
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "cancel";
+  cancel.textContent = "✕";
+  cancel.title = cancel.ariaLabel = "Cancelar este recordatorio";
+  cancel.addEventListener("click", async () => {
+    cancel.disabled = true;
+    try {
+      await invoke("cancel_reminder", { id: item.id });
+      setMessage(reminderMessage, "Recordatorio cancelado.", "ok");
+    } catch (error) {
+      setMessage(reminderMessage, String(error), "error");
+    }
+    await loadReminders();
+  });
+
+  row.append(when, text, cancel);
+  return row;
+}
+
+// La cuenta atrás se recalcula cada segundo sin volver a pedir la lista.
+function refreshCountdowns(list = reminderList) {
+  const now = Date.now() / 1000;
+  for (const row of list.children) {
+    const seconds = Number(row.dataset.due) - now;
+    row.querySelector(".left").textContent = relativeTime(seconds);
+    row.classList.toggle("soon", seconds <= 300);
+  }
+}
+
+function renderReminders() {
+  reminderList.replaceChildren(...reminders.map(reminderRow));
+  const count = reminders.length;
+  reminderEmpty.hidden = count > 0;
+  reminderCount.textContent = count ? `${count}/${reminderMax}` : "";
+  reminderBadge.textContent = String(count);
+  reminderBadge.hidden = count === 0;
+  refreshCountdowns();
+  renderTodayReminders();
+}
+
+async function loadReminders() {
+  try {
+    const data = await invoke("list_reminders");
+    reminders = data.items;
+    reminderMax = data.max;
+    renderReminders();
+  } catch {
+    // sin la lista no hay nada que pintar; se reintenta en el siguiente ciclo
+  }
+}
+
+function openReminders() {
+  loadReminders();
+  clearInterval(reminderTick);
+  let ticks = 0;
+  reminderTick = setInterval(() => {
+    refreshCountdowns();
+    // Cada pocos segundos se vuelve a leer: así aparecen los que crea la IA y desaparecen los que ya sonaron.
+    if (++ticks % 5 === 0) loadReminders();
+  }, 1000);
+}
+
+function closeReminders() {
+  clearInterval(reminderTick);
+  reminderTick = null;
+}
+
+function showReminderMode() {
+  const at = reminderMode.value === "at";
+  reminderIn.hidden = at;
+  reminderClock.hidden = !at;
+  reminderPresets.hidden = at;
+}
+reminderMode.addEventListener("change", showReminderMode);
+
+reminderPresets.addEventListener("click", (e) => {
+  const preset = e.target.closest("[data-minutes]");
+  if (!preset) return;
+  reminderMinutes.value = preset.dataset.minutes;
+  reminderText.focus();
+});
+
+reminderForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = reminderText.value.trim();
+  if (!text) return setMessage(reminderMessage, "Escribe qué quieres que te recuerde.", "error");
+  const byClock = reminderMode.value === "at";
+  const minutes = Number(reminderMinutes.value);
+  if (byClock ? !reminderClock.value : !Number.isInteger(minutes) || minutes < 1) {
+    return setMessage(reminderMessage, byClock ? "Elige la hora." : "Indica los minutos (un número entero).", "error");
+  }
+  reminderAdd.disabled = true;
+  try {
+    const when = await invoke("add_reminder", {
+      text,
+      minutes: byClock ? null : minutes,
+      at: byClock ? reminderClock.value : null,
+    });
+    reminderText.value = "";
+    setMessage(reminderMessage, `Listo, te lo recordaré ${when}.`, "ok");
+  } catch (error) {
+    setMessage(reminderMessage, String(error), "error");
+  } finally {
+    reminderAdd.disabled = false;
+    await loadReminders();
+  }
+});
+
+// Cuando suena uno, o cuando la IA termina una tarea (quizá creó uno), se actualiza la lista y el contador.
+window.__TAURI__.event.listen("reminder", loadReminders);
+window.__TAURI__.event.listen("character-state", (e) => {
+  if (e.payload === "success") loadReminders();
+});
+loadReminders();
 
 // Secciones de Ajustes: una a la vez, para no tener que recorrer una lista larguísima.
 const subtabs = [...document.querySelectorAll(".subtab")];
@@ -505,6 +789,11 @@ const ccWarning = document.getElementById("cc-warning");
 const ccMessage = document.getElementById("cc-message");
 const confirmAllBox = document.getElementById("confirm-all");
 const toolsList = document.getElementById("tools-list");
+const toolsSearch = document.getElementById("tools-search");
+const toolsCount = document.getElementById("tools-count");
+const toolsAllOn = document.getElementById("tools-all-on");
+const toolsAllOff = document.getElementById("tools-all-off");
+let toolsVisible = [];
 const toolsMessage = document.getElementById("tools-message");
 const avatarsEl = document.getElementById("avatars");
 const avatarMessage = document.getElementById("avatar-message");
@@ -549,6 +838,7 @@ function renderSettings() {
   deleteKey.disabled = p.key_source !== "stored";
 
   renderShortcut();
+  renderQuickShortcut();
   autostartBox.checked = settings.autostart;
   renderAvatars();
   nameInput.value = settings.assistant_name;
@@ -568,6 +858,10 @@ function renderSettings() {
   if (settings.computer_control) ccWarning.hidden = true;
   confirmAllBox.checked = settings.confirm_all;
   renderTools();
+  ollamaThinkBox.checked = Boolean(settings.ollama_think);
+  historySave.checked = settings.save_history !== false;
+  updateModelPill();
+  renderProfile();
 }
 
 // --- Aplicaciones que la IA puede abrir ---
@@ -579,7 +873,12 @@ const appsFilter = document.getElementById("apps-filter");
 const appsRefresh = document.getElementById("apps-refresh");
 const appsHint = document.getElementById("apps-hint");
 const appsMessage = document.getElementById("apps-message");
+const appsOnlyEnabled = document.getElementById("apps-only-enabled");
+const appsAllOn = document.getElementById("apps-all-on");
+const appsAllOff = document.getElementById("apps-all-off");
+const appsCount = document.getElementById("apps-count");
 let appsData = null;
+let appsShown = [];
 
 function appCheckbox(name, checked, note, onChange) {
   const label = document.createElement("label");
@@ -622,7 +921,10 @@ function renderApps() {
     ),
   );
   const needle = appsFilter.value.trim().toLowerCase();
-  const shown = appsData.apps.filter((app) => app.name.toLowerCase().includes(needle));
+  const shown = appsData.apps.filter((app) => app.name.toLowerCase().includes(needle) && (!appsOnlyEnabled.checked || app.enabled));
+  const enabledCount = appsData.apps.filter((app) => app.enabled).length;
+  appsCount.textContent = `${enabledCount} de ${appsData.apps.length} activadas${shown.length !== appsData.apps.length ? ` · se ven ${shown.length}` : ""}.`;
+  appsShown = shown;
   appsList.replaceChildren(
     ...(shown.length
       ? shown.map((app) => appCheckbox(app.name, app.enabled, "", (box) => changeApp("set_custom_app", { app_id: app.app_id, enabled: box.checked })))
@@ -653,6 +955,22 @@ appsDetails.addEventListener("toggle", () => {
 });
 appsRefresh.addEventListener("click", () => loadApps(true));
 appsFilter.addEventListener("input", renderApps);
+appsOnlyEnabled.addEventListener("change", renderApps);
+
+// Activar o desactivar de golpe las aplicaciones que se ven con el filtro actual.
+async function bulkApps(enabled) {
+  const ids = appsShown.filter((app) => app.enabled !== enabled).map((app) => app.app_id);
+  if (!ids.length) return setMessage(appsMessage, enabled ? "Ya están todas activadas." : "Ya están todas desactivadas.", "ok");
+  try {
+    const warning = await invoke("set_custom_apps", { appIds: ids, enabled });
+    setMessage(appsMessage, warning || `${ids.length} aplicaciones ${enabled ? "activadas" : "desactivadas"}.`, warning ? "error" : "ok");
+  } catch (error) {
+    setMessage(appsMessage, String(error), "error");
+  }
+  await loadApps(false);
+}
+appsAllOn.addEventListener("click", () => bulkApps(true));
+appsAllOff.addEventListener("click", () => bulkApps(false));
 
 // Los personajes se describen en assets/characters.json, el mismo archivo que usa la mascota.
 let characterManifest = null;
@@ -707,39 +1025,113 @@ function renderShortcut() {
         : `Ahora: ${label(active)}.`;
 }
 
-// Qué herramientas dejó desplegadas el usuario (se conserva al volver a dibujar la lista).
-const openTools = new Set();
+// Las herramientas se agrupan por categoría y cada una dice cuándo te pide permiso.
+const TOOL_CATEGORIES = [
+  ["Archivos", ["create_file", "create_folder", "list_files", "read_file", "search_files", "move_file", "copy_file", "delete_file", "organize_folder", "undo_organize", "open_path", "zip_files", "unzip_file"]],
+  ["Espacio en disco", ["find_large_files", "folder_sizes", "find_duplicates", "empty_recycle_bin"]],
+  ["Música y multimedia", ["play_music", "search_music", "media_control"]],
+  ["Internet y aplicaciones", ["web_search", "open_website", "open_application"]],
+  ["Sistema", ["system_info", "set_brightness", "read_clipboard", "write_clipboard"]],
+  ["Recordatorios y memoria", ["set_reminder", "list_reminders", "cancel_reminder", "remember", "forget"]],
+  ["Pantalla y otras ventanas", ["look_at_screen", "list_windows", "list_controls", "type_text", "press_keys", "click_control"]],
+];
+// Estas solo funcionan si además está activado «Control de otras aplicaciones».
+const CONTROL_TOOLS = ["list_windows", "list_controls", "type_text", "press_keys", "click_control"];
+const RISK_LABEL = { safe: "Segura", confirm: "Pide permiso", dangerous: "Peligrosa" };
 
-// Cada herramienta es un acordeón: a la vista solo su nombre y su casilla; la descripción, al desplegarla.
+// Qué grupos dejó desplegados el usuario (se conserva al volver a dibujar la lista).
+const openGroups = new Set();
+
+const categoryOf = (name) => TOOL_CATEGORIES.find(([, names]) => names.includes(name))?.[0] ?? "Otras";
+const humanToolName = (name) => name.replaceAll("_", " ");
+
+function toolRow(tool) {
+  const row = document.createElement("label");
+  row.className = "tool-row";
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = tool.enabled;
+  box.setAttribute("aria-label", `Permitir ${humanToolName(tool.name)}`);
+  box.addEventListener("change", () => changeSetting(toolsMessage, "set_tool_enabled", { name: tool.name, enabled: box.checked }));
+
+  const body = document.createElement("div");
+  body.className = "tool-body";
+  const head = document.createElement("div");
+  head.className = "tool-head";
+  const name = document.createElement("strong");
+  name.textContent = humanToolName(tool.name);
+  const risk = document.createElement("span");
+  risk.className = `risk ${tool.risk}`;
+  risk.textContent = RISK_LABEL[tool.risk] ?? tool.risk;
+  head.append(name, risk);
+  if (CONTROL_TOOLS.includes(tool.name) && !settings.computer_control) {
+    const note = document.createElement("span");
+    note.className = "risk muted";
+    note.textContent = "necesita el control de otras aplicaciones";
+    head.append(note);
+  }
+  const desc = document.createElement("p");
+  desc.className = "desc";
+  desc.textContent = tool.description;
+  body.append(head, desc);
+
+  row.append(box, body);
+  return row;
+}
+
+function toolGroup(category, tools, forceOpen) {
+  const details = document.createElement("details");
+  details.className = "tool-group";
+  details.open = forceOpen || openGroups.has(category);
+  details.addEventListener("toggle", () => (details.open ? openGroups.add(category) : openGroups.delete(category)));
+
+  const summary = document.createElement("summary");
+  const name = document.createElement("span");
+  name.className = "g-name";
+  name.textContent = category;
+  const count = document.createElement("span");
+  count.className = "g-count";
+  count.textContent = `${tools.filter((t) => t.enabled).length}/${tools.length}`;
+  const all = tools.every((t) => t.enabled);
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "g-toggle";
+  toggle.textContent = all ? "Ninguna" : "Todas";
+  toggle.title = all ? "Desactivar todas las de este grupo" : "Activar todas las de este grupo";
+  // El botón vive en la cabecera del acordeón: pulsarlo no debe plegarlo ni desplegarlo.
+  toggle.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    changeSetting(toolsMessage, "set_tools_enabled", { names: tools.map((t) => t.name), enabled: !all });
+  });
+  summary.append(name, count, toggle);
+  details.append(summary, ...tools.map(toolRow));
+  return details;
+}
+
 function renderTools() {
+  const needle = toolsSearch.value.trim().toLowerCase();
+  const all = settings.tools;
+  toolsCount.textContent = `${all.filter((t) => t.enabled).length}/${all.length}`;
+  const visible = all.filter((t) => !needle || humanToolName(t.name).includes(needle) || t.description.toLowerCase().includes(needle));
+  toolsVisible = visible;
+
+  const byCategory = new Map();
+  for (const tool of visible) {
+    const category = categoryOf(tool.name);
+    if (!byCategory.has(category)) byCategory.set(category, []);
+    byCategory.get(category).push(tool);
+  }
+  const order = [...TOOL_CATEGORIES.map(([category]) => category), "Otras"];
+  const groups = order.filter((category) => byCategory.has(category)).map((category) => toolGroup(category, byCategory.get(category), Boolean(needle)));
   toolsList.replaceChildren(
-    ...settings.tools.map((tool) => {
-      const details = document.createElement("details");
-      details.className = "tool";
-      details.open = openTools.has(tool.name);
-      details.addEventListener("toggle", () => (details.open ? openTools.add(tool.name) : openTools.delete(tool.name)));
-
-      const summary = document.createElement("summary");
-      const box = document.createElement("input");
-      box.type = "checkbox";
-      box.checked = tool.enabled;
-      box.setAttribute("aria-label", `Permitir ${tool.name}`);
-      // Marcar la casilla no debe desplegar ni plegar la descripción.
-      box.addEventListener("click", (event) => event.stopPropagation());
-      box.addEventListener("change", () => changeSetting(toolsMessage, "set_tool_enabled", { name: tool.name, enabled: box.checked }));
-      const name = document.createElement("span");
-      name.className = "name";
-      name.textContent = tool.name;
-      summary.append(box, name);
-
-      const desc = document.createElement("p");
-      desc.className = "desc";
-      desc.textContent = tool.description;
-      details.append(summary, desc);
-      return details;
-    }),
+    ...(groups.length ? groups : [Object.assign(document.createElement("p"), { className: "hint", textContent: "Ninguna herramienta coincide." })]),
   );
 }
+
+toolsSearch.addEventListener("input", () => renderTools());
+toolsAllOn.addEventListener("click", () => changeSetting(toolsMessage, "set_tools_enabled", { names: toolsVisible.map((t) => t.name), enabled: true }));
+toolsAllOff.addEventListener("click", () => changeSetting(toolsMessage, "set_tools_enabled", { names: toolsVisible.map((t) => t.name), enabled: false }));
 
 // --- Nombre del asistente ---
 const nameForm = document.getElementById("name-form");
@@ -833,6 +1225,40 @@ volumeInput.addEventListener("change", () => changeSetting(soundMessage, "set_so
 testSoundButton.addEventListener("click", () => invoke("test_sound", { volume: Number(volumeInput.value) }));
 confirmAllBox.addEventListener("change", () => changeSetting(toolsMessage, "set_confirm_all", { value: confirmAllBox.checked }));
 autostartBox.addEventListener("change", () => changeSetting(autostartMessage, "set_autostart", { enabled: autostartBox.checked }));
+
+// Atajo de la barra rápida: mismo formulario que el del chat.
+const quickForm = document.getElementById("quick-form");
+const quickKey = document.getElementById("quick-key");
+const quickMessage = document.getElementById("quick-message");
+const quickHint = document.getElementById("quick-hint");
+const saveQuick = document.getElementById("save-quick");
+const quickMods = [...document.querySelectorAll("[data-qmod]")];
+
+function renderQuickShortcut() {
+  const parts = settings.quick_shortcut.split("+");
+  quickKey.value = parts[parts.length - 1];
+  quickMods.forEach((box) => (box.checked = parts.slice(0, -1).includes(box.dataset.qmod)));
+  const label = (text) => text.replace("Super", "Win");
+  quickHint.textContent = settings.quick_shortcut_active
+    ? `Ahora: ${label(settings.quick_shortcut_active)}.`
+    : `${label(settings.quick_shortcut)} no está disponible (otro programa lo usa): elige otro.`;
+}
+
+quickForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const mods = quickMods.filter((box) => box.checked).map((box) => box.dataset.qmod);
+  const shortcut = [...mods, quickKey.value.trim().toUpperCase()].join("+");
+  saveQuick.disabled = true;
+  try {
+    await invoke("set_quick_shortcut", { shortcut });
+    setMessage(quickMessage, "Atajo guardado.", "ok");
+  } catch (error) {
+    setMessage(quickMessage, String(error), "error");
+  } finally {
+    saveQuick.disabled = false;
+    await loadSettings();
+  }
+});
 
 shortcutForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -945,4 +1371,1223 @@ deleteKey.addEventListener("click", async () => {
   }
   await loadSettings();
 });
+// --- Modelo de IA en la cabecera ---
+const modelPill = document.getElementById("model-pill");
+const modelPillText = document.getElementById("model-pill-text");
+const modelMenu = document.getElementById("model-menu");
+const ollamaThinkBox = document.getElementById("ollama-think");
+
+const modelInUse = (p) => p.model || p.default_model;
+
+// «qwen3.5:9b · local» para un modelo en tu equipo, «Google Gemini · gemini-…» para uno en la nube.
+function updateModelPill() {
+  const p = settings && currentProvider();
+  if (!p) return;
+  modelPillText.textContent = p.needs_key ? `${p.name} · ${modelInUse(p)}` : `${modelInUse(p)} · local`;
+  modelPill.title = `Modelo en uso: ${modelInUse(p)} (${p.name}). Pulsa para cambiar.`;
+  modelPill.hidden = false;
+}
+
+function menuTitle(text) {
+  const el = document.createElement("div");
+  el.className = "menu-title";
+  el.textContent = text;
+  return el;
+}
+
+function menuHint(text) {
+  const el = document.createElement("div");
+  el.className = "menu-hint";
+  el.textContent = text;
+  return el;
+}
+
+function menuItem(label, { active = false, note = "", onClick }) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "menu-item";
+  button.setAttribute("role", "menuitemradio");
+  button.setAttribute("aria-checked", String(active));
+  const mark = document.createElement("span");
+  mark.className = "mark";
+  mark.textContent = active ? "✓" : "";
+  const name = document.createElement("span");
+  name.className = "label";
+  name.textContent = label;
+  button.append(mark, name);
+  if (note) {
+    const small = document.createElement("span");
+    small.className = "note";
+    small.textContent = note;
+    button.append(small);
+  }
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function closeModelMenu() {
+  modelMenu.hidden = true;
+  modelPill.setAttribute("aria-expanded", "false");
+}
+
+async function chooseProvider(id) {
+  if (id === settings.provider) return;
+  try {
+    await invoke("set_provider", { id });
+    await loadSettings();
+    closeModelMenu();
+    addMessage("assistant", `Ahora uso ${currentProvider().name}. Empezamos una conversación nueva.`);
+  } catch (error) {
+    addMessage("assistant", `No pude cambiar de proveedor: ${error}`);
+  }
+}
+
+async function chooseModel(provider, model) {
+  try {
+    await invoke("set_model", { provider, model });
+    await loadSettings();
+    closeModelMenu();
+    addMessage("assistant", `Listo, ahora uso el modelo ${model}.`);
+  } catch (error) {
+    addMessage("assistant", `No pude cambiar de modelo: ${error}`);
+  }
+}
+
+async function renderModelMenu() {
+  const p = currentProvider();
+  const entries = [menuTitle("Proveedor")];
+  for (const provider of settings.providers) {
+    entries.push(
+      menuItem(provider.name, {
+        active: provider.id === p.id,
+        note: provider.needs_key ? "" : "en tu equipo",
+        onClick: () => chooseProvider(provider.id),
+      }),
+    );
+  }
+  modelMenu.replaceChildren(...entries);
+
+  if (!p.needs_key) {
+    const holder = document.createElement("div");
+    holder.className = "menu-models";
+    holder.append(menuHint("Buscando modelos…"));
+    modelMenu.append(menuTitle("Modelos de Ollama"), holder);
+
+    const think = document.createElement("label");
+    think.className = "switch menu-switch";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = Boolean(settings.ollama_think);
+    const track = document.createElement("span");
+    track.className = "track";
+    const text = document.createElement("span");
+    text.className = "text";
+    text.textContent = "Razonar antes de responder (más lento)";
+    think.append(box, track, text);
+    box.addEventListener("change", async () => {
+      await invoke("set_ollama_think", { value: box.checked }).catch(() => {});
+      await loadSettings();
+    });
+    modelMenu.append(think);
+
+    try {
+      const names = await invoke("list_ollama_models", {});
+      holder.replaceChildren(
+        ...(names.length
+          ? names.map((name) => menuItem(name, { active: name === modelInUse(p), onClick: () => chooseModel(p.id, name) }))
+          : [menuHint("No hay modelos descargados. Prueba: ollama pull qwen3:8b")]),
+      );
+    } catch (error) {
+      holder.replaceChildren(menuHint(String(error)));
+    }
+  }
+
+  modelMenu.append(
+    menuItem("Más opciones de IA…", {
+      onClick: () => {
+        closeModelMenu();
+        showTab("settings");
+        showPanel("ai");
+      },
+    }),
+  );
+}
+
+async function openModelMenu() {
+  showTab("chat");
+  if (!settings) await loadSettings().catch(() => {});
+  if (!settings) return;
+  modelMenu.hidden = false;
+  modelPill.setAttribute("aria-expanded", "true");
+  renderModelMenu();
+}
+
+modelPill.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (modelMenu.hidden) openModelMenu();
+  else closeModelMenu();
+});
+document.addEventListener("click", (e) => {
+  if (!modelMenu.hidden && !modelMenu.contains(e.target)) closeModelMenu();
+});
+
+// El mismo interruptor que en el menú, dentro de Ajustes > IA.
+ollamaThinkBox.addEventListener("change", async () => {
+  try {
+    await invoke("set_ollama_think", { value: ollamaThinkBox.checked });
+    setMessage(ollamaMessage, ollamaThinkBox.checked ? "El modelo razonará antes de responder (más lento)." : "El modelo responderá directamente.", "ok");
+  } catch (error) {
+    setMessage(ollamaMessage, String(error), "error");
+  }
+  await loadSettings();
+});
+
+// --- Paleta de comandos: al escribir «/» aparece la lista con lo que se puede usar ---
+const palette = document.getElementById("palette");
+const COMMANDS = [
+  { cmd: "/new", desc: "Empezar una conversación nueva" },
+  { cmd: "/modelo", desc: "Cambiar de proveedor o de modelo de IA" },
+  { cmd: "/tools", desc: "Ver las herramientas disponibles" },
+  { cmd: "/key", args: "TU_CLAVE", desc: "Guardar la API key del proveedor activo" },
+  { cmd: "/forget", desc: "Borrar la API key guardada" },
+];
+let paletteItems = [];
+let paletteIndex = 0;
+
+function hidePalette() {
+  palette.hidden = true;
+  paletteItems = [];
+}
+
+// Cierra lo que esté abierto encima del chat; devuelve si había algo.
+function closeOverlays() {
+  const open = !palette.hidden || !modelMenu.hidden || !lookPanel.hidden;
+  hidePalette();
+  closeModelMenu();
+  closeLook();
+  return open;
+}
+
+function renderPalette() {
+  const typed = input.value.toLowerCase();
+  // Solo mientras se escribe el comando: en cuanto hay un espacio, empiezan los argumentos.
+  paletteItems = typed.startsWith("/") && !/\s/.test(typed) ? COMMANDS.filter((c) => c.cmd.startsWith(typed)) : [];
+  if (!paletteItems.length) return hidePalette();
+  paletteIndex = Math.min(paletteIndex, paletteItems.length - 1);
+  palette.replaceChildren(
+    ...paletteItems.map((item, index) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "palette-item";
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", String(index === paletteIndex));
+      const cmd = document.createElement("strong");
+      cmd.textContent = item.args ? `${item.cmd} ${item.args}` : item.cmd;
+      const desc = document.createElement("span");
+      desc.textContent = item.desc;
+      row.append(cmd, desc);
+      // mousedown (y no click) para que la caja de texto no pierda el foco.
+      row.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        pickCommand(index);
+      });
+      return row;
+    }),
+  );
+  palette.hidden = false;
+}
+
+function pickCommand(index) {
+  const item = paletteItems[index];
+  if (!item) return;
+  input.value = item.args ? `${item.cmd} ` : item.cmd;
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  renderPalette();
+}
+
+input.addEventListener("input", () => {
+  paletteIndex = 0;
+  renderPalette();
+});
+input.addEventListener("keydown", (e) => {
+  if (palette.hidden) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    paletteIndex = (paletteIndex + (e.key === "ArrowDown" ? 1 : -1) + paletteItems.length) % paletteItems.length;
+    renderPalette();
+  } else if (e.key === "Tab") {
+    e.preventDefault();
+    pickCommand(paletteIndex);
+  } else if (e.key === "Enter" && input.value.trim().toLowerCase() !== paletteItems[paletteIndex].cmd) {
+    // Con un comando a medias, Enter lo completa; con el comando ya entero, lo envía.
+    e.preventDefault();
+    pickCommand(paletteIndex);
+  }
+});
+input.addEventListener("blur", () => setTimeout(hidePalette, 120));
+
+// --- Imágenes adjuntas: pegar capturas y mirar una ventana ---
+const attachmentsEl = document.getElementById("attachments");
+const lookBtn = document.getElementById("look-btn");
+const lookPanel = document.getElementById("look-panel");
+const lookStatus = document.getElementById("look-status");
+const lookThumb = document.getElementById("look-thumb");
+const lookCaption = document.getElementById("look-caption");
+const lookSelect = document.getElementById("look-select");
+const lookAttach = document.getElementById("look-attach");
+const MAX_ATTACHMENTS = 3;
+const MAX_IMAGE_SIDE = 1280;
+let pendingImages = []; // [{ mime, data (base64), label }]
+let lookCapture = null;
+let attachNoteTimer = null;
+
+// Aviso breve junto a las imágenes (por ejemplo, cuando el modelo no las admite).
+function attachNote(text) {
+  let note = attachmentsEl.querySelector(".attach-note");
+  if (!note) {
+    note = document.createElement("div");
+    note.className = "attach-note";
+    attachmentsEl.append(note);
+  }
+  note.textContent = text;
+  attachmentsEl.hidden = false;
+  clearTimeout(attachNoteTimer);
+  attachNoteTimer = setTimeout(() => {
+    note.remove();
+    attachmentsEl.hidden = pendingImages.length === 0;
+  }, 6000);
+}
+
+// Hasta que se cargan los ajustes se da por buena: el servidor rechaza lo que el modelo no pueda ver.
+function canSeeImages() {
+  const provider = settings && currentProvider();
+  return !provider || provider.vision !== false;
+}
+
+function renderAttachments() {
+  const note = attachmentsEl.querySelector(".attach-note");
+  const chips = pendingImages.map((image, index) => {
+    const chip = document.createElement("div");
+    chip.className = "attach-chip";
+    const thumb = document.createElement("img");
+    thumb.src = `data:${image.mime};base64,${image.data}`;
+    thumb.alt = image.label || "Imagen adjunta";
+    thumb.title = image.label || "Imagen adjunta";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "attach-x";
+    remove.textContent = "✕";
+    remove.title = remove.ariaLabel = "Quitar esta imagen";
+    remove.addEventListener("click", () => {
+      pendingImages.splice(index, 1);
+      renderAttachments();
+      input.focus();
+    });
+    chip.append(thumb, remove);
+    return chip;
+  });
+  attachmentsEl.replaceChildren(...chips, ...(note ? [note] : []));
+  attachmentsEl.hidden = !chips.length && !note;
+}
+
+function addPendingImage(image) {
+  if (!canSeeImages()) {
+    attachNote("Este proveedor todavía no puede ver imágenes. Cambia a Ollama con un modelo con visión (por ejemplo qwen3.5:9b).");
+    return false;
+  }
+  if (pendingImages.length >= MAX_ATTACHMENTS) {
+    attachNote(`Solo puedes adjuntar hasta ${MAX_ATTACHMENTS} imágenes por mensaje.`);
+    return false;
+  }
+  pendingImages.push(image);
+  renderAttachments();
+  return true;
+}
+
+// Reduce la imagen (lo que se envía no necesita más de 1280 px) y la convierte a PNG; si pesa mucho, a JPEG.
+async function normalizeImage(blob) {
+  const bitmap = await createImageBitmap(blob);
+  const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close?.();
+  let url = canvas.toDataURL("image/png");
+  let mime = "image/png";
+  if (url.length > 2_000_000) {
+    url = canvas.toDataURL("image/jpeg", 0.85);
+    mime = "image/jpeg";
+  }
+  return { mime, data: url.slice(url.indexOf(",") + 1) };
+}
+
+// Ctrl+V con una imagen en el portapapeles (una captura de pantalla, por ejemplo) la adjunta al mensaje.
+input.addEventListener("paste", async (e) => {
+  const images = [...(e.clipboardData?.items ?? [])].filter((item) => item.kind === "file" && item.type.startsWith("image/"));
+  if (!images.length) return; // texto normal: se pega como siempre
+  e.preventDefault();
+  for (const item of images) {
+    try {
+      const normalized = await normalizeImage(item.getAsFile());
+      if (!addPendingImage({ ...normalized, label: "Captura pegada" })) break;
+    } catch {
+      attachNote("No pude leer esa imagen.");
+    }
+  }
+});
+
+// «Mirar una ventana»: se captura la ventana en la que estabas, se te enseña y solo se adjunta si lo aceptas.
+function closeLook() {
+  lookPanel.hidden = true;
+  lookCapture = null;
+}
+
+async function captureLook(title) {
+  lookCapture = null;
+  lookAttach.disabled = true;
+  lookThumb.hidden = true;
+  lookCaption.textContent = "";
+  lookStatus.hidden = false;
+  lookStatus.textContent = "Capturando…";
+  try {
+    const capture = await invoke("capture_window_preview", { title: title || null });
+    lookCapture = capture;
+    lookThumb.src = `data:${capture.mime};base64,${capture.data}`;
+    lookThumb.hidden = false;
+    lookCaption.textContent = `«${capture.title}» (${capture.process}) · ${capture.width}×${capture.height}`;
+    lookStatus.hidden = true;
+    lookAttach.disabled = false;
+  } catch (error) {
+    lookStatus.textContent = String(error);
+  }
+}
+
+async function openLook() {
+  if (!canSeeImages()) {
+    attachNote("Este proveedor todavía no puede ver imágenes. Cambia a Ollama con un modelo con visión (por ejemplo qwen3.5:9b).");
+    return;
+  }
+  hidePalette();
+  closeModelMenu();
+  lookPanel.hidden = false;
+  lookSelect.replaceChildren(new Option("La ventana en la que estabas", ""));
+  try {
+    const windows = await invoke("list_capturable_windows");
+    for (const w of windows) lookSelect.append(new Option(`${w.title} — ${w.process}`, w.title));
+  } catch {
+    // sin la lista se puede seguir con la ventana automática
+  }
+  captureLook("");
+}
+
+lookBtn.addEventListener("click", () => (lookPanel.hidden ? openLook() : closeLook()));
+document.getElementById("look-close").addEventListener("click", closeLook);
+document.getElementById("look-cancel").addEventListener("click", closeLook);
+lookSelect.addEventListener("change", () => captureLook(lookSelect.value));
+lookAttach.addEventListener("click", () => {
+  if (!lookCapture) return;
+  const { mime, data, title } = lookCapture;
+  if (addPendingImage({ mime, data, label: title })) {
+    closeLook();
+    input.focus();
+  }
+});
+
+// --- Fechas legibles de cosas que ya pasaron ---
+const capital = (text) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+
+// «Hoy 21:05», «Ayer 18:20», «Lunes 20:10», «2 nov», «2 nov 2025».
+function pastLabel(seconds) {
+  const date = new Date(seconds * 1000);
+  const now = new Date();
+  const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((dayStart(now) - dayStart(date)) / 86400000);
+  const time = date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+  if (days <= 0) return `Hoy ${time}`;
+  if (days === 1) return `Ayer ${time}`;
+  if (days < 7) return `${capital(date.toLocaleDateString("es", { weekday: "long" }))} ${time}`;
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return date.toLocaleDateString("es", sameYear ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
+}
+
+// --- Hoy: lo importante de un vistazo ---
+const todayDate = document.getElementById("today-date");
+const todayGreeting = document.getElementById("today-greeting");
+const todayMediaCard = document.getElementById("today-media-card");
+const todayMediaTitle = document.getElementById("today-media-title");
+const todayMediaSub = document.getElementById("today-media-sub");
+const todayMediaPrev = document.getElementById("today-media-prev");
+const todayMediaToggle = document.getElementById("today-media-toggle");
+const todayMediaNext = document.getElementById("today-media-next");
+const todayRemindersEl = document.getElementById("today-reminders");
+const todayRemindersEmpty = document.getElementById("today-reminders-empty");
+const todayAllReminders = document.getElementById("today-all-reminders");
+const todayStats = document.getElementById("today-stats");
+const todayLastCard = document.getElementById("today-last-card");
+const todayLastTitle = document.getElementById("today-last-title");
+const todayLastSub = document.getElementById("today-last-sub");
+const todayLastResume = document.getElementById("today-last-resume");
+const todayShortcuts = document.getElementById("today-shortcuts");
+let todayTimer = null;
+let lastMedia = null;
+let lastConversationId = null;
+
+function renderTodayHeader() {
+  const now = new Date();
+  const hour = now.getHours();
+  const hello = hour >= 5 && hour < 13 ? "¡Buenos días!" : hour >= 13 && hour < 20 ? "¡Buenas tardes!" : "¡Buenas noches!";
+  const day = capital(now.toLocaleDateString("es", { weekday: "long", day: "numeric", month: "long" }));
+  todayDate.textContent = `${day} · ${now.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}`;
+  todayGreeting.textContent = `${hello} ¿En qué te ayudo hoy?`;
+}
+
+// Los tres recordatorios más próximos; el resto, en su pestaña.
+function renderTodayReminders() {
+  todayRemindersEl.replaceChildren(...reminders.slice(0, 3).map(reminderRow));
+  todayRemindersEmpty.hidden = reminders.length > 0;
+  todayAllReminders.hidden = reminders.length <= 3;
+  todayAllReminders.textContent = `Ver todos (${reminders.length})`;
+  refreshCountdowns(todayRemindersEl);
+}
+todayAllReminders.addEventListener("click", () => showTab("reminders"));
+
+function renderTodayMedia() {
+  todayMediaCard.hidden = !lastMedia;
+  if (!lastMedia) return;
+  const playing = lastMedia.state === "playing";
+  todayMediaTitle.textContent = lastMedia.title || "Sin título";
+  todayMediaSub.textContent = [lastMedia.artist, lastMedia.app].filter(Boolean).join(" · ");
+  todayMediaToggle.textContent = playing ? "⏸" : "▶";
+  todayMediaToggle.title = todayMediaToggle.ariaLabel = playing ? "Pausar" : "Reproducir";
+  todayMediaPrev.disabled = !lastMedia.can_previous;
+  todayMediaNext.disabled = !lastMedia.can_next;
+  todayMediaToggle.disabled = !lastMedia.can_play_pause;
+}
+
+async function refreshMedia() {
+  try {
+    const snapshot = await invoke("get_media");
+    lastMedia = snapshot ? snapshot.state : null;
+  } catch {
+    lastMedia = null;
+  }
+  renderTodayMedia();
+}
+window.__TAURI__.event.listen("media-state", (e) => {
+  lastMedia = e.payload;
+  renderTodayMedia();
+});
+
+async function pressMedia(action) {
+  try {
+    await invoke("media_control", { action });
+  } catch {
+    // la aplicación puede no aceptar la orden; el estado real se vuelve a leer enseguida
+  }
+  setTimeout(refreshMedia, 300);
+}
+todayMediaPrev.addEventListener("click", () => pressMedia("previous"));
+todayMediaToggle.addEventListener("click", () => pressMedia("play_pause"));
+todayMediaNext.addEventListener("click", () => pressMedia("next"));
+
+const gigabytes = (bytes) => `${(bytes / 2 ** 30).toFixed(1).replace(".", ",")} GB`;
+
+function meter(label, percent, detail, warn) {
+  const box = document.createElement("div");
+  box.className = "meter";
+  const top = document.createElement("div");
+  top.className = "meter-top";
+  const name = document.createElement("span");
+  name.textContent = label;
+  const value = document.createElement("strong");
+  value.textContent = detail;
+  top.append(name, value);
+  const bar = document.createElement("div");
+  bar.className = `meter-bar${warn ? " warn" : ""}`;
+  const fill = document.createElement("i");
+  fill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  bar.append(fill);
+  box.append(top, bar);
+  return box;
+}
+
+async function refreshStatus() {
+  try {
+    const s = await invoke("get_system_status");
+    const rows = [];
+    if (s.battery) {
+      const low = s.battery.percent <= 20 && !s.battery.charging;
+      rows.push(meter(`🔋 Batería${s.battery.charging ? " · cargando" : ""}`, s.battery.percent, `${s.battery.percent} %`, low));
+    }
+    rows.push(meter("🧠 Memoria", s.memory_used_percent, `${s.memory_used_percent} % de ${gigabytes(s.memory_total_bytes)}`, s.memory_used_percent >= 90));
+    if (s.disk_total_bytes > 0) {
+      const usedPercent = Math.round(((s.disk_total_bytes - s.disk_free_bytes) / s.disk_total_bytes) * 100);
+      rows.push(meter("💾 Disco", usedPercent, `${gigabytes(s.disk_free_bytes)} libres de ${gigabytes(s.disk_total_bytes)}`, usedPercent >= 90));
+    }
+    const hours = Math.floor(s.uptime_seconds / 3600);
+    const uptime = document.createElement("p");
+    uptime.className = "hint";
+    uptime.textContent = hours >= 24 ? `Encendido desde hace ${Math.floor(hours / 24)} d ${hours % 24} h.` : `Encendido desde hace ${hours} h ${Math.floor((s.uptime_seconds % 3600) / 60)} min.`;
+    todayStats.replaceChildren(...rows, uptime);
+  } catch {
+    todayStats.textContent = "No pude leer el estado del equipo.";
+  }
+}
+
+async function refreshLastConversation() {
+  try {
+    const [latest] = await invoke("list_conversations", {});
+    todayLastCard.hidden = !latest;
+    if (!latest) return;
+    lastConversationId = latest.id;
+    todayLastTitle.textContent = latest.title;
+    todayLastSub.textContent = `${pastLabel(latest.updated)} · ${latest.count} mensajes`;
+  } catch {
+    todayLastCard.hidden = true;
+  }
+}
+todayLastResume.addEventListener("click", () => resumeConversation(lastConversationId));
+
+// Lo que se pide con un clic: se envía tal cual, salvo los atajos que necesitan completarse.
+const SHORTCUTS = [
+  ["🎵", "Pon música tranquila", true],
+  ["📂", "¿Qué ocupa más espacio en mis Descargas?", true],
+  ["🔁", "Busca archivos duplicados en el escritorio", true],
+  ["🗂️", "Organiza mi carpeta de Descargas", true],
+  ["🪟", "Mira esta ventana y dime qué ves", true],
+  ["⏰", "Recuérdame ", false],
+  ["🆕", "/new", true],
+];
+
+function askRyan(text, send) {
+  showTab("chat");
+  if (!send) {
+    input.value = text;
+    input.focus();
+    input.setSelectionRange(text.length, text.length);
+    return;
+  }
+  hideIdeas();
+  remember(text);
+  addMessage("user", text);
+  invoke("submit_message", { text });
+}
+
+// Cada modo propone lo que más encaja con él.
+const PROFILE_SHORTCUTS = {
+  work: [
+    ["📂", "¿Qué ocupa más espacio en mis Descargas?", true],
+    ["🔁", "Busca archivos duplicados en el escritorio", true],
+    ["🗂️", "Organiza mi carpeta de Descargas", true],
+    ["🪟", "Mira esta ventana y dime qué ves", true],
+    ["⏰", "Recuérdame ", false],
+    ["🆕", "/new", true],
+  ],
+  rest: [
+    ["🎵", "Pon música tranquila", true],
+    ["😄", "Cuéntame un chiste", true],
+    ["⏰", "Recuérdame descansar en 15 minutos", true],
+    ["🔎", "Busca algo interesante para hoy", true],
+    ["🎲", "Propón algo divertido que hacer", true],
+    ["🆕", "/new", true],
+  ],
+  focus: [
+    ["⏰", "Recuérdame ", false],
+    ["🪟", "Mira esta ventana y dime qué ves", true],
+    ["🆕", "/new", true],
+  ],
+};
+
+function renderShortcuts() {
+  const list = PROFILE_SHORTCUTS[settings?.profile] ?? SHORTCUTS;
+  todayShortcuts.replaceChildren(
+    ...list.map(([icon, text, send]) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "idea";
+      button.textContent = `${icon} ${text.trim()}${send ? "" : "…"}`;
+      button.addEventListener("click", () => askRyan(text, send));
+      return button;
+    }),
+  );
+}
+renderShortcuts();
+
+// --- Modos (perfiles) ---
+const profileChips = document.getElementById("profile-chips");
+const profileDesc = document.getElementById("profile-desc");
+const profileChanges = document.getElementById("profile-changes");
+const profileSelect = document.getElementById("profile-select");
+const profileSelectDesc = document.getElementById("profile-select-desc");
+const profileBadge = document.getElementById("profile-badge");
+
+function renderProfile() {
+  if (!settings?.profiles) return;
+  const active = settings.profiles.find((p) => p.id === settings.profile) ?? settings.profiles[0];
+  profileChips.replaceChildren(
+    ...settings.profiles.map((p) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "profile-chip";
+      chip.setAttribute("role", "radio");
+      chip.setAttribute("aria-checked", String(p.id === active.id));
+      chip.textContent = `${p.icon} ${p.name}`;
+      chip.title = p.description;
+      chip.addEventListener("click", () => chooseProfile(p.id));
+      return chip;
+    }),
+  );
+  profileDesc.textContent = active.description;
+  profileChanges.replaceChildren(
+    ...active.changes.map((text) => {
+      const item = document.createElement("li");
+      item.textContent = text;
+      return item;
+    }),
+  );
+  if (profileSelect.options.length !== settings.profiles.length) {
+    profileSelect.replaceChildren(...settings.profiles.map((p) => new Option(`${p.icon} ${p.name}`, p.id)));
+  }
+  profileSelect.value = active.id;
+  profileSelectDesc.textContent = active.description;
+  // Solo se destaca en la cabecera cuando no es el modo Normal.
+  profileBadge.hidden = active.id === "normal";
+  profileBadge.textContent = `${active.icon} ${active.name}`;
+  renderShortcuts();
+}
+
+async function chooseProfile(id) {
+  if (!settings || id === settings.profile) return;
+  try {
+    await invoke("set_profile", { id });
+    await loadSettings();
+  } catch (error) {
+    addMessage("assistant", `No pude cambiar de modo: ${error}`);
+  }
+}
+profileSelect.addEventListener("change", () => chooseProfile(profileSelect.value));
+profileBadge.addEventListener("click", () => showTab("today"));
+window.__TAURI__.event.listen("profile-changed", () => loadSettings().catch(() => {}));
+
+async function refreshToday() {
+  await Promise.allSettled([loadReminders(), refreshStatus(), refreshMedia(), refreshLastConversation()]);
+  renderTodayHeader();
+}
+
+function openToday() {
+  renderTodayHeader();
+  refreshToday();
+  clearInterval(todayTimer);
+  let ticks = 0;
+  todayTimer = setInterval(() => {
+    refreshCountdowns(todayRemindersEl);
+    if (++ticks % 10 === 0) refreshToday();
+  }, 1000);
+}
+
+function closeToday() {
+  clearInterval(todayTimer);
+  todayTimer = null;
+}
+
+// --- Historial de conversaciones ---
+const historyItems = document.getElementById("history-items");
+const historyEmpty = document.getElementById("history-empty");
+const historySearch = document.getElementById("history-search");
+const historySave = document.getElementById("history-save");
+const historyClear = document.getElementById("history-clear");
+const historyMessage = document.getElementById("history-message");
+const historyListView = document.getElementById("history-list-view");
+const historyDetailView = document.getElementById("history-detail-view");
+const historyBack = document.getElementById("history-back");
+const historyResume = document.getElementById("history-resume");
+const historyDelete = document.getElementById("history-delete");
+const detailTitle = document.getElementById("detail-title");
+const detailMeta = document.getElementById("detail-meta");
+const detailMessages = document.getElementById("detail-messages");
+const detailMessage = document.getElementById("detail-message");
+let openConversationId = null;
+let searchTimer = null;
+
+// Cada carácter en minúscula y sin tilde, uno por uno: así los índices coinciden con el texto original.
+const foldChars = (text) => [...text].map((c) => c.normalize("NFD").charAt(0).toLowerCase());
+
+// Escribe `text` en `el` resaltando lo que coincide con la búsqueda (sin distinguir mayúsculas ni tildes).
+function appendHighlighted(el, text, query) {
+  const needle = foldChars(query.trim());
+  if (!needle.length) {
+    el.textContent = text;
+    return;
+  }
+  const chars = [...text];
+  const folded = foldChars(text);
+  let from = 0;
+  while (from < chars.length) {
+    let found = -1;
+    for (let start = from; start + needle.length <= folded.length; start += 1) {
+      if (needle.every((c, offset) => folded[start + offset] === c)) {
+        found = start;
+        break;
+      }
+    }
+    if (found < 0) break;
+    el.append(chars.slice(from, found).join(""));
+    const mark = document.createElement("mark");
+    mark.textContent = chars.slice(found, found + needle.length).join("");
+    el.append(mark);
+    from = found + needle.length;
+  }
+  el.append(chars.slice(from).join(""));
+}
+
+function conversationCard(item, query) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "conv";
+  const title = document.createElement("div");
+  title.className = "conv-title";
+  appendHighlighted(title, item.title, query);
+  const meta = document.createElement("div");
+  meta.className = "conv-meta";
+  meta.textContent = `${pastLabel(item.updated)} · ${item.count} mensajes`;
+  const preview = document.createElement("div");
+  preview.className = "conv-preview";
+  appendHighlighted(preview, item.snippet || item.preview, query);
+  card.append(title, meta, preview);
+  card.addEventListener("click", () => openConversation(item.id));
+  return card;
+}
+
+async function loadHistory() {
+  const query = historySearch.value.trim();
+  try {
+    const items = await invoke("list_conversations", { query: query || null });
+    historyItems.replaceChildren(...items.map((item) => conversationCard(item, query)));
+    historyEmpty.hidden = items.length > 0;
+    if (!items.length) {
+      historyEmpty.textContent = query
+        ? `Ninguna conversación menciona «${query}».`
+        : historySave.checked
+          ? "Todavía no hay conversaciones guardadas. Habla con tu asistente en la pestaña Charla y aparecerán aquí."
+          : "El historial está apagado: las conversaciones nuevas no se guardan.";
+    }
+  } catch (error) {
+    setMessage(historyMessage, String(error), "error");
+  }
+}
+
+function openHistory() {
+  historyListView.hidden = false;
+  historyDetailView.hidden = true;
+  loadHistory();
+}
+
+historySearch.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadHistory, 180);
+});
+
+async function openConversation(id) {
+  try {
+    const conversation = await invoke("load_conversation", { id });
+    openConversationId = id;
+    detailTitle.textContent = conversation.title;
+    detailMeta.textContent = `${pastLabel(conversation.created)} · ${conversation.messages.length} mensajes`;
+    detailMessages.replaceChildren(...conversation.messages.map((m) => buildMessage(m.role, m.text, m.at)));
+    setMessage(detailMessage, "");
+    historyDelete.textContent = "Borrar";
+    historyListView.hidden = true;
+    historyDetailView.hidden = false;
+    document.querySelector("#view-history .panels").scrollTop = 0;
+  } catch (error) {
+    setMessage(historyMessage, String(error), "error");
+    loadHistory();
+  }
+}
+historyBack.addEventListener("click", openHistory);
+
+// Vuelve a mostrar la conversación en el chat y la IA recupera lo hablado; lo nuevo se añade a ella.
+async function resumeConversation(id) {
+  try {
+    const conversation = await invoke("resume_conversation", { id });
+    hideIdeas();
+    history.replaceChildren();
+    typingEl = null;
+    streamEl = null;
+    for (const m of conversation.messages) addToHistory(buildMessage(m.role, m.text, m.at));
+    const divider = document.createElement("div");
+    divider.className = "divider";
+    divider.textContent = `Continúas la conversación «${conversation.title}»`;
+    addToHistory(divider);
+    renderTyping();
+    showTab("chat");
+  } catch (error) {
+    setMessage(openConversationId === id ? detailMessage : historyMessage, String(error), "error");
+  }
+}
+historyResume.addEventListener("click", () => resumeConversation(openConversationId));
+
+// Borrar pide una segunda pulsación: así no se pierde una conversación por un clic suelto.
+function armed(button, idleText, onConfirm) {
+  let timer = null;
+  button.addEventListener("click", () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+      button.textContent = idleText;
+      onConfirm();
+      return;
+    }
+    button.textContent = "¿Seguro? Pulsa otra vez";
+    timer = setTimeout(() => {
+      timer = null;
+      button.textContent = idleText;
+    }, 3500);
+  });
+}
+
+armed(historyDelete, "Borrar", async () => {
+  try {
+    await invoke("delete_conversation", { id: openConversationId });
+    openHistory();
+    setMessage(historyMessage, "Conversación borrada.", "ok");
+  } catch (error) {
+    setMessage(detailMessage, String(error), "error");
+  }
+});
+
+armed(historyClear, "Borrar todo el historial", async () => {
+  try {
+    await invoke("clear_conversations");
+    setMessage(historyMessage, "Historial borrado.", "ok");
+  } catch (error) {
+    setMessage(historyMessage, String(error), "error");
+  }
+  loadHistory();
+});
+
+historySave.addEventListener("change", async () => {
+  try {
+    await invoke("set_save_history", { value: historySave.checked });
+    setMessage(historyMessage, historySave.checked ? "Las conversaciones nuevas se guardarán." : "Las conversaciones nuevas ya no se guardan. Las anteriores siguen ahí.", "ok");
+  } catch (error) {
+    setMessage(historyMessage, String(error), "error");
+  }
+  await loadSettings().catch(() => {});
+  loadHistory();
+});
+
+// --- Detalle de lo que hace cada herramienta (en el chat y en la pestaña Actividad) ---
+const TOOL_LABELS = {
+  create_file: "Crear un archivo", create_folder: "Crear una carpeta", list_files: "Listar una carpeta", read_file: "Leer un archivo",
+  search_files: "Buscar archivos", move_file: "Mover o renombrar", copy_file: "Copiar", delete_file: "Enviar a la Papelera",
+  organize_folder: "Organizar una carpeta", undo_organize: "Deshacer la organización", open_path: "Abrir en el Explorador",
+  zip_files: "Comprimir en zip", unzip_file: "Descomprimir un zip", find_large_files: "Buscar archivos grandes",
+  folder_sizes: "Medir carpetas", find_duplicates: "Buscar duplicados", empty_recycle_bin: "Vaciar la Papelera",
+  play_music: "Reproducir música", search_music: "Buscar música", media_control: "Controlar la reproducción",
+  web_search: "Buscar en internet", open_website: "Abrir un sitio web", open_application: "Abrir una aplicación",
+  system_info: "Consultar el equipo", set_brightness: "Cambiar el brillo", read_clipboard: "Leer el portapapeles",
+  write_clipboard: "Escribir en el portapapeles", set_reminder: "Crear un recordatorio", list_reminders: "Listar recordatorios",
+  cancel_reminder: "Cancelar un recordatorio", remember: "Recordar algo", forget: "Olvidar algo", look_at_screen: "Mirar una ventana",
+  list_windows: "Listar ventanas", list_controls: "Listar controles", type_text: "Escribir en otra aplicación",
+  press_keys: "Pulsar teclas", click_control: "Pulsar un control",
+};
+const toolLabel = (name) => TOOL_LABELS[name] ?? humanToolName(name);
+
+const FIELD_LABELS = {
+  location: "Ubicación", subfolder: "Subcarpeta", name: "Nombre", to_location: "Ubicación de destino", to_subfolder: "Subcarpeta de destino",
+  new_name: "Nombre nuevo", zip_name: "Nombre del zip", folder_name: "Carpeta de destino", window: "Ventana", keys: "Teclas",
+  query: "Búsqueda", text: "Texto", min_mb: "Tamaño mínimo (MB)", min_kb: "Tamaño mínimo (KB)", max_results: "Máximo de resultados",
+  minutes: "Minutos", delay_seconds: "Espera (s)", at: "Hora", service: "Servicio", url: "Dirección", application: "Aplicación",
+  id: "Número", action: "Orden", name_contains: "Nombre contiene", path: "Ruta", from: "Origen", to: "Destino", zip: "Zip",
+  folder: "Carpeta", files: "Archivos", bytes: "Tamaño", total_matches: "Coincidencias", scanned: "Revisados",
+  wasted_bytes: "Espacio recuperable", original_bytes: "Tamaño original", zip_bytes: "Tamaño del zip", reveal: "Mostrar en el Explorador",
+  recycled: "En la Papelera", title: "Título", artist: "Artista", playing: "Sonando", characters: "Caracteres", program: "Programa",
+  when: "Cuándo", total_bytes: "Total",
+};
+const PLACE_NAMES = { desktop: "Escritorio", documents: "Documentos", downloads: "Descargas" };
+const fieldLabel = (key) => FIELD_LABELS[key] ?? humanToolName(key);
+
+function formatBytes(bytes) {
+  if (bytes >= 2 ** 30) return `${(bytes / 2 ** 30).toFixed(1).replace(".", ",")} GB`;
+  if (bytes >= 2 ** 20) return `${Math.round(bytes / 2 ** 20)} MB`;
+  return `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
+}
+
+function fieldValue(key, value) {
+  if (value === true) return "Sí";
+  if (value === false) return "No";
+  if (typeof value === "number") return key.endsWith("bytes") ? formatBytes(value) : String(value);
+  if (typeof value === "string") return key.endsWith("location") ? (PLACE_NAMES[value] ?? value) : value;
+  return String(value);
+}
+
+// Una lista de «campo: valor». Los valores simples van en su fila; las listas, como «N elementos» y sus primeros elementos.
+function detailRows(object) {
+  const list = document.createElement("dl");
+  list.className = "kv";
+  const add = (label, value, mono = false) => {
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    if (mono) dd.className = "mono";
+    list.append(dt, dd);
+  };
+  for (const [key, value] of Object.entries(object ?? {})) {
+    if (value === null || value === undefined) continue;
+    if (Array.isArray(value)) {
+      if (!value.length) continue;
+      const lines = value.slice(0, 8).map((item) => (typeof item === "object" ? JSON.stringify(item) : String(item)));
+      add(fieldLabel(key), `${value.length} elementos\n${lines.join("\n")}${value.length > 8 ? "\n…" : ""}`, true);
+    } else if (typeof value === "object") {
+      add(fieldLabel(key), JSON.stringify(value), true);
+    } else {
+      add(fieldLabel(key), fieldValue(key, value), typeof value === "string" && /^[a-z]:/i.test(value));
+    }
+  }
+  return list.children.length ? list : null;
+}
+
+// La ruta que tiene sentido enseñar en el Explorador (lo que la acción creó o dejó): nunca el origen de algo movido.
+function primaryPath(p) {
+  if (p.tool === "delete_file" || !p.ok) return null;
+  for (const key of ["to", "zip", "folder", "path"]) {
+    const value = p.data?.[key];
+    if (typeof value === "string" && /^[a-z]:/i.test(value)) return value;
+  }
+  return null;
+}
+
+function toolSection(title, content) {
+  const section = document.createElement("div");
+  section.className = "tool-section";
+  const heading = document.createElement("div");
+  heading.className = "tool-heading";
+  heading.textContent = title;
+  section.append(heading, content);
+  return section;
+}
+
+function plainBlock(text) {
+  const el = document.createElement("div");
+  el.className = "tool-text";
+  el.textContent = text;
+  return el;
+}
+
+function toolActions(p) {
+  const actions = document.createElement("div");
+  actions.className = "tool-actions";
+  const status = document.createElement("span");
+  status.className = "tool-status";
+  const button = (label, onClick, secondary = true) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    if (secondary) b.className = "secondary";
+    b.addEventListener("click", onClick);
+    actions.append(b);
+    return b;
+  };
+  const path = primaryPath(p);
+  if (path) {
+    button("Mostrar en el Explorador", async () => {
+      try {
+        await invoke("show_in_explorer", { path });
+        status.textContent = "";
+      } catch (error) {
+        status.textContent = String(error);
+      }
+    });
+    const copy = button("Copiar ruta", async () => {
+      await copyText(path);
+      copy.textContent = "Copiada ✓";
+      setTimeout(() => (copy.textContent = "Copiar ruta"), 1400);
+    });
+  }
+  if (p.tool === "delete_file" && p.ok) {
+    button("Abrir la Papelera", () => invoke("open_recycle_bin").catch((error) => (status.textContent = String(error))));
+  }
+  if (p.undone) {
+    status.textContent = "Ya se deshizo.";
+  } else if (p.undo && p.id) {
+    const undo = button(`Deshacer: ${p.undo}`, async () => {
+      undo.disabled = true;
+      try {
+        await invoke("undo_activity", { id: p.id });
+        status.textContent = "Te pido confirmación en el chat…";
+      } catch (error) {
+        status.textContent = String(error);
+        undo.disabled = false;
+      }
+    }, false);
+  }
+  if (status.textContent || actions.children.length) actions.append(status);
+  return actions.children.length ? actions : null;
+}
+
+// El detalle completo de una acción: qué herramienta, qué se le pidió, qué devolvió, cuándo y cuánto tardó.
+function toolDetail(p) {
+  const box = document.createElement("div");
+  box.className = "tool-detail";
+  box.append(toolSection("Herramienta", plainBlock(`${toolLabel(p.tool)} (${p.tool})`)));
+  const args = detailRows(p.args);
+  box.append(toolSection("Qué se le pidió", args ?? plainBlock("Nada en particular.")));
+  box.append(toolSection(p.ok ? "Resultado" : "Qué falló", plainBlock(p.summary || "—")));
+  const data = detailRows(p.data);
+  if (data) box.append(toolSection("Datos", data));
+  const when = new Date(p.at * 1000).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const took = p.duration_ms < 1000 ? `${p.duration_ms} ms` : `${(p.duration_ms / 1000).toFixed(1).replace(".", ",")} s`;
+  box.append(toolSection("Cuándo", plainBlock(`${when} · tardó ${took} · ${p.confirmed ? "confirmaste esta acción" : "no necesitó tu permiso"}`)));
+  const actions = toolActions(p);
+  if (actions) box.append(actions);
+  return box;
+}
+
+// Un mensaje «✔ Moví X» que se despliega para ver qué se hizo exactamente.
+function buildToolMessage(p) {
+  const firstLine = p.text.split("\n")[0];
+  const el = buildMessage("assistant", firstLine, p.at);
+  el.classList.add("tool", p.ok ? "ok" : "fail");
+  const detail = toolDetail(p);
+  detail.hidden = true;
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "detail-toggle";
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.textContent = "Ver detalle ▾";
+  toggle.addEventListener("click", () => {
+    const opening = detail.hidden;
+    detail.hidden = !opening;
+    toggle.setAttribute("aria-expanded", String(opening));
+    toggle.textContent = opening ? "Ocultar detalle ▴" : "Ver detalle ▾";
+    history.scrollTop = history.scrollHeight;
+  });
+  const anchor = el.querySelector(".copy");
+  el.insertBefore(toggle, anchor);
+  el.insertBefore(detail, anchor);
+  return el;
+}
+window.__TAURI__.event.listen("chat-tool", (e) => addToHistory(buildToolMessage(e.payload)));
+
+// --- Pestaña Actividad ---
+const activityList = document.getElementById("activity-list");
+const activityEmpty = document.getElementById("activity-empty");
+const activitySearch = document.getElementById("activity-search");
+const activityCount = document.getElementById("activity-count");
+const activityClear = document.getElementById("activity-clear");
+const activityMessage = document.getElementById("activity-message");
+const activityFilters = document.getElementById("activity-filters");
+let activityData = [];
+let activityFilter = "all";
+
+function activityCard(entry) {
+  const payload = { ...entry, undo: entry.undone ? null : entry.undo };
+  const card = document.createElement("div");
+  card.className = `act ${entry.ok ? "ok" : "fail"}${entry.undone ? " undone" : ""}`;
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "act-head";
+  head.setAttribute("aria-expanded", "false");
+  const icon = document.createElement("span");
+  icon.className = "act-icon";
+  icon.textContent = entry.ok ? "✔" : "✖";
+  const main = document.createElement("span");
+  main.className = "act-main";
+  const title = document.createElement("span");
+  title.className = "act-title";
+  title.textContent = toolLabel(entry.tool);
+  const sub = document.createElement("span");
+  sub.className = "act-sub";
+  sub.textContent = entry.summary.split("\n")[0];
+  main.append(title, sub);
+  const side = document.createElement("span");
+  side.className = "act-side";
+  const time = document.createElement("span");
+  time.className = "act-time";
+  time.textContent = pastLabel(entry.at);
+  side.append(time);
+  if (entry.undone) {
+    const badge = document.createElement("span");
+    badge.className = "badge-undone";
+    badge.textContent = "Deshecho";
+    side.append(badge);
+  } else if (entry.undo) {
+    const badge = document.createElement("span");
+    badge.className = "badge-undo";
+    badge.textContent = "Se puede deshacer";
+    side.append(badge);
+  }
+  head.append(icon, main, side);
+  const detail = toolDetail(payload);
+  detail.hidden = true;
+  head.addEventListener("click", () => {
+    detail.hidden = !detail.hidden;
+    head.setAttribute("aria-expanded", String(!detail.hidden));
+  });
+  card.append(head, detail);
+  return card;
+}
+
+function renderActivity() {
+  const needle = activitySearch.value.trim().toLowerCase();
+  const shown = activityData.filter((entry) => {
+    if (activityFilter === "undo" && !(entry.undo && !entry.undone)) return false;
+    if (activityFilter === "failed" && entry.ok) return false;
+    return !needle || toolLabel(entry.tool).toLowerCase().includes(needle) || entry.summary.toLowerCase().includes(needle);
+  });
+  activityCount.textContent = activityData.length ? String(activityData.length) : "";
+  activityList.replaceChildren(...shown.map(activityCard));
+  activityEmpty.hidden = shown.length > 0;
+  if (!shown.length) {
+    activityEmpty.textContent = activityData.length
+      ? "Nada coincide con ese filtro."
+      : settings?.save_history === false
+        ? "El historial está apagado, así que no se guarda la actividad."
+        : "Todavía no ha hecho nada. Cuando Ryan mueva, copie o cree algo, aparecerá aquí.";
+  }
+}
+
+async function loadActivity() {
+  try {
+    activityData = await invoke("list_activity");
+  } catch {
+    activityData = [];
+  }
+  renderActivity();
+}
+
+function openActivity() {
+  loadActivity();
+}
+
+activitySearch.addEventListener("input", renderActivity);
+activityFilters.addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-filter]");
+  if (!chip) return;
+  activityFilter = chip.dataset.filter;
+  for (const other of activityFilters.children) other.setAttribute("aria-checked", String(other === chip));
+  renderActivity();
+});
+armed(activityClear, "Borrar el registro", async () => {
+  await invoke("clear_activity").catch(() => {});
+  setMessage(activityMessage, "Registro borrado.", "ok");
+  loadActivity();
+});
+window.__TAURI__.event.listen("activity-changed", () => {
+  if (currentTab === "activity") loadActivity();
+});
+
+// Al arrancar, la página puede cargar antes de que la aplicación termine de prepararse: se reintenta unos segundos.
+async function loadSettingsWhenReady(attempt = 0) {
+  try {
+    await loadSettings();
+  } catch {
+    if (attempt < 30) setTimeout(() => loadSettingsWhenReady(attempt + 1), 400);
+  }
+}
+loadSettingsWhenReady();
 loadHeaderAvatar();

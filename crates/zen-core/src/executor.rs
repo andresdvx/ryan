@@ -63,6 +63,19 @@ impl ToolExecutor {
         self.registry.specs()
     }
 
+    /// Cada herramienta con su nivel de riesgo habitual (el que tiene sin argumentos), para enseñarlo en Ajustes.
+    pub fn all_with_risk(&self) -> Vec<(ToolSpec, RiskLevel)> {
+        let empty = serde_json::Value::Object(Default::default());
+        self.registry
+            .specs()
+            .into_iter()
+            .map(|spec| {
+                let risk = self.registry.get(&spec.name).map(|tool| tool.risk(&empty)).unwrap_or(RiskLevel::Confirm);
+                (spec, risk)
+            })
+            .collect()
+    }
+
     /// Aplica nuevos ajustes de permisos sin reiniciar; afecta a las siguientes peticiones.
     pub fn set_policy(&self, policy: PermissionPolicy) {
         *self.policy.write().expect("política envenenada") = policy;
@@ -177,6 +190,19 @@ mod tests {
         fn execute(&self, _args: &Value) -> Result<ToolOutput, ToolError> {
             self.runs.fetch_add(1, Ordering::SeqCst);
             Ok(ToolOutput { summary: "hecho".into(), data: Value::Null })
+        }
+    }
+
+    #[test]
+    fn la_pantalla_de_ajustes_ve_el_riesgo_de_cada_herramienta_aunque_este_desactivada() {
+        for risk in [RiskLevel::Safe, RiskLevel::Confirm, RiskLevel::Dangerous] {
+            let mut policy = PermissionPolicy::default();
+            policy.disable_tool("fake");
+            let (executor, ..) = setup(risk, policy);
+            let all = executor.all_with_risk();
+            assert_eq!(all.len(), 1);
+            assert_eq!((all[0].0.name.as_str(), all[0].1), ("fake", risk));
+            assert!(executor.specs().is_empty(), "desactivada: la IA no la ve, pero Ajustes sí");
         }
     }
 

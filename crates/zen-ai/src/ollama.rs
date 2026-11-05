@@ -14,27 +14,106 @@ const CONTEXT_TOKENS: u32 = 8192;
 /// La primera respuesta incluye cargar el modelo en memoria, que en equipos modestos tarda.
 const TIMEOUT_SECS: u64 = 300;
 
+/// Opciones del servidor local que no son el modelo: dónde está y si el modelo razona antes de responder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OllamaSettings {
+    pub url: String,
+    /// Los modelos con razonamiento (Qwen3, DeepSeek-R1…) piensan en silencio antes de escribir, y eso puede
+    /// tardar decenas de segundos. Apagado, responden casi al instante.
+    pub think: bool,
+}
+
+impl Default for OllamaSettings {
+    fn default() -> Self {
+        Self { url: DEFAULT_URL.to_string(), think: false }
+    }
+}
+
 pub struct OllamaProvider {
     base_url: String,
     model: String,
+    think: bool,
     http: HttpClient,
 }
 
 impl OllamaProvider {
     pub fn new(base_url: &str, model: String) -> Self {
         let base_url = normalize_base_url(base_url).unwrap_or_else(|_| DEFAULT_URL.to_string());
-        Self { base_url, model, http: HttpClient::with_timeout(TIMEOUT_SECS) }
+        Self { base_url, model, think: false, http: HttpClient::with_timeout(TIMEOUT_SECS) }
     }
+
+    pub fn with_think(mut self, think: bool) -> Self {
+        self.think = think;
+        self
+    }
+
+    /// Lanza la petición indicando si se quiere razonamiento. Los modelos sin esa capacidad rechazan el parámetro:
+    /// en ese caso se repite una vez sin él.
+    fn attempt<T>(&self, mut run: impl FnMut(Option<bool>) -> Result<T, LlmError>) -> Result<T, LlmError> {
+        match run(Some(self.think)) {
+            Err(error) if rejects_think(&error) => run(None),
+            other => other,
+        }
+    }
+}
+
+fn rejects_think(error: &LlmError) -> bool {
+    matches!(error, LlmError::Unsupported(text) if text.contains("support thinking"))
 }
 
 impl LlmProvider for OllamaProvider {
     fn generate(&self, system: &str, history: &[Message], tools: &[ToolSpec]) -> Result<LlmResponse, LlmError> {
-        let body = build_request(&self.model, system, history, tools);
-        let (status, value) = self
+        self.attempt(|think| {
+            let body = build_request_with(&self.model, system, history, tools, false, think);
+            let (status, value) = self
+                .http
+                .post_json(&format!("{}/api/chat", self.base_url), &[], &body)
+                .map_err(|error| unreachable_hint(error, &self.base_url))?;
+            parse_response(status, &value, &self.model)
+        })
+    }
+
+    /// Ollama envía la respuesta en trozos (una línea JSON por trozo): el texto se reenvía según llega,
+    /// sin el razonamiento, y las llamadas a herramientas se juntan para el final.
+    fn generate_stream(
+        &self,
+        system: &str,
+        history: &[Message],
+        tools: &[ToolSpec],
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<LlmResponse, LlmError> {
+        self.attempt(|think| {
+        let body = build_request_with(&self.model, system, history, tools, true, think);
+        let (mut raw, mut filter, mut tool_calls) = (String::new(), ThinkFilter::default(), Vec::new());
+        let (status, error_body) = self
             .http
-            .post_json(&format!("{}/api/chat", self.base_url), &[], &body)
+            .post_lines(&format!("{}/api/chat", self.base_url), &[], &body, &mut |line| {
+                let chunk: Value = serde_json::from_str(line).map_err(|_| LlmError::BadResponse("Ollama envió una línea que no es JSON".into()))?;
+                // Un error a mitad de respuesta llega como una línea más: `{ "error": "..." }`.
+                if chunk.get("error").is_some() {
+                    return Err(map_api_error(500, &chunk, &self.model));
+                }
+                let message = &chunk["message"];
+                if let Some(text) = message["content"].as_str().filter(|text| !text.is_empty()) {
+                    raw.push_str(text);
+                    let visible = filter.feed(text);
+                    if !visible.is_empty() {
+                        on_text(&visible);
+                    }
+                }
+                tool_calls.extend(parse_tool_calls(&message["tool_calls"])?);
+                Ok(())
+            })
             .map_err(|error| unreachable_hint(error, &self.base_url))?;
-        parse_response(status, &value, &self.model)
+        if status >= 400 {
+            return Err(map_api_error(status, &error_body.unwrap_or(Value::Null), &self.model));
+        }
+        let rest = filter.finish();
+        if !rest.is_empty() {
+            on_text(&rest);
+        }
+        Ok(LlmResponse { text: strip_thinking(&raw), tool_calls, raw: None })
+        })
     }
 
     fn supports_images(&self) -> bool {
@@ -79,7 +158,13 @@ fn unreachable_hint(error: LlmError, base_url: &str) -> LlmError {
     }
 }
 
+#[cfg(test)]
 fn build_request(model: &str, system: &str, history: &[Message], tools: &[ToolSpec]) -> Value {
+    build_request_with(model, system, history, tools, false, None)
+}
+
+/// `think`: `Some(true/false)` pide (o no) razonamiento de forma explícita; `None` deja el comportamiento del modelo.
+fn build_request_with(model: &str, system: &str, history: &[Message], tools: &[ToolSpec], stream: bool, think: Option<bool>) -> Value {
     let mut messages = vec![json!({ "role": "system", "content": system })];
     for message in history {
         match message {
@@ -108,9 +193,12 @@ fn build_request(model: &str, system: &str, history: &[Message], tools: &[ToolSp
     let mut request = json!({
         "model": model,
         "messages": messages,
-        "stream": false,
+        "stream": stream,
         "options": { "num_ctx": CONTEXT_TOKENS },
     });
+    if let Some(think) = think {
+        request["think"] = Value::Bool(think);
+    }
     if !tools.is_empty() {
         request["tools"] = tools
             .iter()
@@ -158,8 +246,12 @@ fn parse_response(status: u16, body: &Value, model: &str) -> Result<LlmResponse,
     }
     let message = body.get("message").filter(|m| m.is_object()).ok_or_else(|| LlmError::BadResponse("la respuesta no trae «message»".into()))?;
     let text = strip_thinking(message["content"].as_str().unwrap_or(""));
+    Ok(LlmResponse { text, tool_calls: parse_tool_calls(&message["tool_calls"])?, raw: None })
+}
+
+fn parse_tool_calls(calls: &Value) -> Result<Vec<ToolInvocation>, LlmError> {
     let mut tool_calls = Vec::new();
-    for call in message["tool_calls"].as_array().into_iter().flatten() {
+    for call in calls.as_array().into_iter().flatten() {
         let function = &call["function"];
         let name = function["name"].as_str().ok_or_else(|| LlmError::BadResponse("llamada a herramienta sin nombre".into()))?;
         let args = match &function["arguments"] {
@@ -170,7 +262,65 @@ fn parse_response(status: u16, body: &Value, model: &str) -> Result<LlmResponse,
         };
         tool_calls.push(ToolInvocation { id: call["id"].as_str().map(str::to_string), name: name.to_string(), args });
     }
-    Ok(LlmResponse { text, tool_calls, raw: None })
+    Ok(tool_calls)
+}
+
+/// Quita el razonamiento (`<think>…</think>`) del texto que llega en trozos, aunque una etiqueta venga partida
+/// entre dos trozos («<th» + «ink>»). También descarta los saltos de línea iniciales, que suelen seguir al razonamiento.
+#[derive(Default)]
+struct ThinkFilter {
+    pending: String,
+    in_think: bool,
+    started: bool,
+}
+
+/// Cuántos caracteres del final de `text` podrían ser el comienzo de `tag` (y hay que esperar a ver el siguiente trozo).
+fn partial_suffix_len(text: &str, tag: &str) -> usize {
+    (1..tag.len()).rev().find(|&length| text.ends_with(&tag[..length])).unwrap_or(0)
+}
+
+impl ThinkFilter {
+    fn feed(&mut self, chunk: &str) -> String {
+        self.pending.push_str(chunk);
+        self.drain(false)
+    }
+
+    /// Fin del texto: lo que se retenía por si era una etiqueta ya no puede serlo.
+    fn finish(&mut self) -> String {
+        self.drain(true)
+    }
+
+    fn drain(&mut self, last: bool) -> String {
+        let mut out = String::new();
+        loop {
+            if self.in_think {
+                if let Some(end) = self.pending.find("</think>") {
+                    self.pending.drain(..end + "</think>".len());
+                    self.in_think = false;
+                    continue;
+                }
+                let keep = if last { 0 } else { partial_suffix_len(&self.pending, "</think>") };
+                self.pending.drain(..self.pending.len() - keep);
+                break;
+            }
+            if let Some(start) = self.pending.find("<think>") {
+                out.push_str(&self.pending[..start]);
+                self.pending.drain(..start + "<think>".len());
+                self.in_think = true;
+                continue;
+            }
+            let keep = if last { 0 } else { partial_suffix_len(&self.pending, "<think>") };
+            let cut = self.pending.len() - keep;
+            out.push_str(&self.pending[..cut]);
+            self.pending.drain(..cut);
+            break;
+        }
+        if !self.started {
+            out = out.trim_start().to_string();
+            self.started = !out.is_empty();
+        }
+        out
+    }
 }
 
 #[cfg(test)]
@@ -312,6 +462,136 @@ mod tests {
         (url, handle)
     }
 
+    /// Como `fake_ollama`, pero atiende varias peticiones seguidas (una respuesta por cada una).
+    fn fake_ollama_sequence(replies: Vec<(&'static str, String)>) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            for (status, body) in replies {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut received = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    let n = stream.read(&mut chunk).unwrap();
+                    received.extend_from_slice(&chunk[..n]);
+                    let text = String::from_utf8_lossy(&received).to_string();
+                    if let Some((head, rest)) = text.split_once("\r\n\r\n") {
+                        let length = head.lines().find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").and_then(|v| v.trim().parse::<usize>().ok())).unwrap_or(0);
+                        if rest.len() >= length {
+                            break;
+                        }
+                    }
+                    if n == 0 {
+                        break;
+                    }
+                }
+                let reply = format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                stream.write_all(reply.as_bytes()).unwrap();
+                requests.push(String::from_utf8_lossy(&received).to_string());
+            }
+            requests
+        });
+        (url, handle)
+    }
+
+    fn sent_json(request: &str) -> Value {
+        serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap()
+    }
+
+    #[test]
+    fn por_defecto_se_pide_sin_razonamiento_y_se_puede_activar() {
+        let ok = json!({ "message": { "content": "Hola" } }).to_string();
+        let (url, server) = fake_ollama_sequence(vec![("200 OK", ok.clone()), ("200 OK", ok)]);
+        OllamaProvider::new(&url, "qwen3.5:9b".into()).generate("s", &[Message::User("hola".into())], &[]).unwrap();
+        OllamaProvider::new(&url, "qwen3.5:9b".into()).with_think(true).generate("s", &[Message::User("hola".into())], &[]).unwrap();
+        let requests = server.join().unwrap();
+        assert_eq!(sent_json(&requests[0])["think"], false);
+        assert_eq!(sent_json(&requests[1])["think"], true);
+    }
+
+    #[test]
+    fn un_modelo_que_no_admite_razonar_se_reintenta_sin_el_parametro() {
+        let rejected = json!({ "error": "registry.ollama.ai/library/llama3.1:8b does not support thinking" }).to_string();
+        let ok = json!({ "message": { "content": "Hola" } }).to_string();
+        let (url, server) = fake_ollama_sequence(vec![("400 Bad Request", rejected.clone()), ("200 OK", ok)]);
+        let response = OllamaProvider::new(&url, "llama3.1:8b".into()).generate("s", &[Message::User("hola".into())], &[]).unwrap();
+        assert_eq!(response.text, "Hola");
+        let requests = server.join().unwrap();
+        assert!(sent_json(&requests[0]).get("think").is_some());
+        assert!(sent_json(&requests[1]).get("think").is_none(), "el reintento no lleva el parámetro");
+
+        // Lo mismo con la respuesta en directo.
+        let stream_ok = ndjson(&[json!({ "message": { "content": "Hola" }, "done": false }), json!({ "done": true })]);
+        let (url, server) = fake_ollama_sequence(vec![("400 Bad Request", rejected), ("200 OK", stream_ok)]);
+        let mut text = String::new();
+        let response = OllamaProvider::new(&url, "llama3.1:8b".into()).generate_stream("s", &[Message::User("hola".into())], &[], &mut |d| text.push_str(d)).unwrap();
+        assert_eq!((text.as_str(), response.text.as_str()), ("Hola", "Hola"));
+        assert_eq!(server.join().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn el_filtro_de_razonamiento_funciona_aunque_las_etiquetas_lleguen_partidas() {
+        let mut filter = ThinkFilter::default();
+        let mut visible = String::new();
+        for chunk in ["<th", "ink>pienso", " mucho</thi", "nk>\n\nHo", "la <", "b>mundo", "<"] {
+            visible.push_str(&filter.feed(chunk));
+        }
+        visible.push_str(&filter.finish());
+        assert_eq!(visible, "Hola <b>mundo<", "el «<» suelto del final se conserva al terminar");
+        // Un razonamiento sin cerrar no se muestra nunca.
+        let mut filter = ThinkFilter::default();
+        let shown = filter.feed("Hola<think>nunca termina") + &filter.finish();
+        assert_eq!(shown, "Hola");
+        // Sin razonamiento, el texto pasa tal cual (salvo los espacios iniciales).
+        let mut filter = ThinkFilter::default();
+        assert_eq!(filter.feed("  Hola ") + &filter.feed("mundo"), "Hola mundo");
+    }
+
+    fn ndjson(lines: &[Value]) -> String {
+        lines.iter().map(Value::to_string).collect::<Vec<_>>().join("\n") + "\n"
+    }
+
+    #[test]
+    fn la_respuesta_en_directo_se_reenvia_por_trozos_y_se_reconstruye() {
+        let body = ndjson(&[
+            json!({ "message": { "role": "assistant", "content": "<think>pen" }, "done": false }),
+            json!({ "message": { "role": "assistant", "content": "sando</think>\n\nHo" }, "done": false }),
+            json!({ "message": { "role": "assistant", "content": "la" }, "done": false }),
+            json!({ "message": { "role": "assistant", "content": "", "tool_calls": [{ "function": { "name": "create_folder", "arguments": { "name": "Fotos" } } }] }, "done": false }),
+            json!({ "message": { "role": "assistant", "content": "" }, "done": true }),
+        ]);
+        let (url, server) = fake_ollama("200 OK", &body);
+        let provider = OllamaProvider::new(&url, "qwen3.5:9b".into());
+        let mut deltas = Vec::new();
+        let response = provider.generate_stream("sistema", &[Message::User("hola".into())], &[spec()], &mut |d| deltas.push(d.to_string())).unwrap();
+        assert_eq!(deltas.concat(), "Hola");
+        assert!(deltas.len() >= 2, "llegó en más de un trozo: {deltas:?}");
+        assert_eq!(response.text, "Hola");
+        assert_eq!(response.tool_calls[0].name, "create_folder");
+        assert_eq!(response.tool_calls[0].args, json!({ "name": "Fotos" }));
+        let request = server.join().unwrap();
+        let sent: Value = serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert_eq!(sent["stream"], true);
+    }
+
+    #[test]
+    fn un_error_a_mitad_de_la_respuesta_en_directo_se_devuelve_como_error() {
+        let body = ndjson(&[json!({ "message": { "content": "Ho" }, "done": false }), json!({ "error": "model runner has unexpectedly stopped" })]);
+        let (url, server) = fake_ollama("200 OK", &body);
+        let mut deltas = Vec::new();
+        let error = OllamaProvider::new(&url, "m".into()).generate_stream("s", &[Message::User("hola".into())], &[], &mut |d| deltas.push(d.to_string())).unwrap_err();
+        assert!(error.to_string().contains("unexpectedly stopped"), "{error}");
+        assert_eq!(deltas, ["Ho"], "lo que llegó antes se mostró");
+        server.join().unwrap();
+
+        let (url, server) = fake_ollama("404 Not Found", &json!({ "error": "model \"nada\" not found" }).to_string());
+        let error = OllamaProvider::new(&url, "nada".into()).generate_stream("s", &[Message::User("hola".into())], &[], &mut |_| {}).unwrap_err();
+        assert!(error.to_string().contains("ollama pull nada"), "{error}");
+        server.join().unwrap();
+    }
+
     #[test]
     fn habla_con_un_servidor_ollama_de_punta_a_punta() {
         let answer = json!({ "message": { "role": "assistant", "content": "<think>x</think>Hola", "tool_calls": [
@@ -355,6 +635,25 @@ mod tests {
     fn ollama_real_lista_los_modelos() {
         let models = list_models(DEFAULT_URL).expect("Ollama debería responder");
         println!("modelos: {models:?}");
+    }
+
+    /// Respuesta en directo con un modelo real: muestra cuándo llega el primer trozo y cuántos son.
+    /// Se ejecuta con `ZEN_TEST_OLLAMA_MODEL=qwen3.5:9b cargo test -p zen-ai -- --ignored --nocapture ollama_real_en_directo`.
+    #[test]
+    #[ignore = "necesita Ollama y un modelo descargado"]
+    fn ollama_real_en_directo() {
+        let model = std::env::var("ZEN_TEST_OLLAMA_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.into());
+        let started = std::time::Instant::now();
+        let mut chunks: Vec<(u128, String)> = Vec::new();
+        let response = OllamaProvider::new(DEFAULT_URL, model)
+            .generate_stream("Eres un asistente breve.", &[Message::User("Cuéntame en tres frases qué es un faro.".into())], &[], &mut |text| {
+                chunks.push((started.elapsed().as_millis(), text.to_string()));
+            })
+            .unwrap();
+        println!("primer trozo a los {} ms; {} trozos; total {} ms", chunks.first().map(|c| c.0).unwrap_or(0), chunks.len(), started.elapsed().as_millis());
+        println!("texto: {}", response.text);
+        assert!(chunks.len() > 3, "debería llegar en varios trozos");
+        assert_eq!(chunks.iter().map(|c| c.1.as_str()).collect::<String>().trim(), response.text.trim());
     }
 
     /// Envía el PNG de `ZEN_TEST_IMAGE` a un modelo con visión (`ZEN_TEST_OLLAMA_MODEL`) y pregunta qué ve.

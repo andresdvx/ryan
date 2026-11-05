@@ -32,7 +32,7 @@ pub fn spawn(app: AppHandle) {
             }
             let Some(kind) = sound_for(&event) else { continue };
             // Los ajustes se leen en cada aviso: el cambio en Ajustes se nota al instante.
-            let settings = Settings::load();
+            let settings = Settings::load_effective();
             if !settings.sound_enabled {
                 continue;
             }

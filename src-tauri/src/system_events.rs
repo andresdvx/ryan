@@ -25,7 +25,7 @@ pub fn spawn(app: AppHandle, reminders: Arc<Reminders>) {
         let mut heads_up = HeadsUpWatcher::default();
         loop {
             // Se sigue observando aunque los avisos estén apagados: al activarlos no salta lo que ya pasó.
-            let enabled = Settings::load().system_events;
+            let enabled = Settings::load_effective().system_events;
             let finished = downloads.as_deref().map(|dir| download_watcher.observe(&scan_folder(dir))).unwrap_or_default();
             let drives = drive_watcher.observe(removable_drives());
             if enabled {
