@@ -8,11 +8,11 @@ Está escrito en **Rust** con **Tauri 2**, y puede usar **Gemini, Claude, OpenAI
   <img src="docs/images/chat.png" alt="Chat de Ryan reproduciendo música en Spotify" width="420">
 </p>
 
-> Las capturas de este README usan datos de ejemplo.
+> Las Imagenes de este README usan datos de ejemplo.
 
 ## Índice
 
-- [Capturas](#capturas)
+- [Imagenes](#capturas)
 - [Qué puede hacer](#qué-puede-hacer)
 - [Seguridad](#seguridad)
 - [Requisitos](#requisitos)
