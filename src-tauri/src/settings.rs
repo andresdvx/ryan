@@ -13,6 +13,7 @@ use zen_desktop::CustomApp;
 pub const DEFAULT_SHORTCUT: &str = "Super+Shift+K";
 /// Si el atajo elegido no se puede registrar (otra app lo usa), se intenta este.
 pub const FALLBACK_SHORTCUT: &str = "Ctrl+Alt+K";
+pub const DEFAULT_QUICK_SHORTCUT: &str = "Super+Shift+J";
 pub const DEFAULT_SOUND_VOLUME: u8 = 40;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,6 +27,8 @@ pub struct Settings {
     /// Guardar las conversaciones en este equipo para poder consultarlas y reanudarlas.
     pub save_history: bool,
     pub shortcut: String,
+    /// Atajo de la barra rápida (un campo pequeño para pedir algo sin abrir el chat).
+    pub quick_shortcut: String,
     /// Pedir confirmación también en las acciones seguras.
     pub confirm_all: bool,
     disabled_tools: BTreeSet<String>,
@@ -51,6 +54,8 @@ pub struct Settings {
     pub music_reaction: bool,
     /// La mascota comenta el uso del equipo: saludos, descansos, aburrimiento.
     pub usage_comments: bool,
+    /// Perfil activo (ver `profiles`): un modo que se aplica por encima de estos ajustes.
+    pub profile: String,
     /// La IA puede escribir, pulsar teclas y pulsar controles en otras aplicaciones. Apagado por defecto.
     pub computer_control: bool,
     /// Aplicaciones conocidas que el usuario desactivó para la IA.
@@ -68,6 +73,7 @@ impl Default for Settings {
             ollama_think: false,
             save_history: true,
             shortcut: DEFAULT_SHORTCUT.to_string(),
+            quick_shortcut: DEFAULT_QUICK_SHORTCUT.to_string(),
             confirm_all: false,
             disabled_tools: BTreeSet::new(),
             wander: true,
@@ -81,6 +87,7 @@ impl Default for Settings {
             computer_control: false,
             memory_enabled: true,
             usage_comments: true,
+            profile: crate::profiles::DEFAULT_ID.to_string(),
             music_reaction: true,
             disabled_apps: BTreeSet::new(),
             custom_apps: Vec::new(),
@@ -89,6 +96,44 @@ impl Default for Settings {
 }
 
 impl Settings {
+    pub fn profile(&self) -> &'static crate::profiles::Profile {
+        crate::profiles::get(&self.profile)
+    }
+
+    /// Los ajustes tal como se aplican ahora: los del usuario con el perfil activo por encima. Sirve para LEER
+    /// (comportamiento, sonidos, avisos); nunca se guarda, o se perderían los valores que el usuario eligió.
+    pub fn effective(&self) -> Settings {
+        let overrides = self.profile().overrides;
+        let mut settings = self.clone();
+        if let Some(value) = overrides.wander {
+            settings.wander = value;
+        }
+        if let Some(value) = overrides.look_at_cursor {
+            settings.look_at_cursor = value;
+        }
+        if let Some(value) = overrides.usage_comments {
+            settings.usage_comments = value;
+        }
+        if let Some(value) = overrides.system_events {
+            settings.system_events = value;
+        }
+        if let Some(value) = overrides.music_reaction {
+            settings.music_reaction = value;
+        }
+        if let Some(value) = overrides.sound_enabled {
+            settings.sound_enabled = value;
+        }
+        if let Some(value) = overrides.sound_volume {
+            settings.sound_volume = value;
+        }
+        settings
+    }
+
+    /// Los ajustes que se aplican ahora (con el perfil activo), para leerlos.
+    pub fn load_effective() -> Self {
+        Self::load().effective()
+    }
+
     /// Carpeta de datos de la aplicación (%APPDATA%\ZenPet).
     pub fn data_dir() -> Option<PathBuf> {
         dirs::config_dir().map(|dir| dir.join("ZenPet"))
@@ -152,6 +197,11 @@ impl Settings {
             ollama_think: value["ollama_think"].as_bool().unwrap_or(false),
             save_history: value["save_history"].as_bool().unwrap_or(true),
             shortcut,
+            quick_shortcut: value["quick_shortcut"]
+                .as_str()
+                .filter(|text| validate_shortcut(text).is_ok())
+                .unwrap_or(DEFAULT_QUICK_SHORTCUT)
+                .to_string(),
             confirm_all: value["confirm_all"].as_bool().unwrap_or(false),
             disabled_tools,
             wander: value["wander"].as_bool().unwrap_or(true),
@@ -174,6 +224,7 @@ impl Settings {
             computer_control: value["computer_control"].as_bool().unwrap_or(false),
             memory_enabled: value["memory_enabled"].as_bool().unwrap_or(true),
             usage_comments: value["usage_comments"].as_bool().unwrap_or(true),
+            profile: value["profile"].as_str().and_then(crate::profiles::find).map(|p| p.id).unwrap_or(crate::profiles::DEFAULT_ID).to_string(),
             music_reaction: value["music_reaction"].as_bool().unwrap_or(true),
             // Aquí solo se lee; `AppCatalog::configure` vuelve a comprobar cada entrada.
             disabled_apps: value["apps"]["disabled"].as_array().into_iter().flatten().filter_map(Value::as_str).take(64).map(str::to_string).collect(),
@@ -197,6 +248,7 @@ impl Settings {
             "ollama_think": self.ollama_think,
             "save_history": self.save_history,
             "shortcut": self.shortcut,
+            "quick_shortcut": self.quick_shortcut,
             "confirm_all": self.confirm_all,
             "disabled_tools": self.disabled_tools,
             "wander": self.wander,
@@ -209,6 +261,7 @@ impl Settings {
             "computer_control": self.computer_control,
             "memory_enabled": self.memory_enabled,
             "usage_comments": self.usage_comments,
+            "profile": self.profile,
             "music_reaction": self.music_reaction,
             "apps": {
                 "disabled": self.disabled_apps,
@@ -313,6 +366,48 @@ pub fn validate_shortcut(text: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn el_perfil_se_aplica_por_encima_sin_tocar_lo_que_eligio_el_usuario() {
+        let mut settings = Settings::default();
+        settings.wander = true;
+        settings.sound_volume = 80;
+        settings.usage_comments = true;
+        assert_eq!(settings.effective(), settings, "el perfil normal no cambia nada");
+
+        settings.profile = "focus".into();
+        let effective = settings.effective();
+        assert!(!effective.wander && !effective.usage_comments && !effective.sound_enabled, "concentración lo apaga todo");
+        assert_eq!(effective.sound_volume, 80, "lo que el perfil no toca se respeta");
+        // Lo guardado sigue siendo lo del usuario: al volver a «Normal» no se pierde nada.
+        assert!(settings.wander && settings.usage_comments && settings.sound_enabled);
+        assert_eq!(Settings::from_json(&settings.to_json()).profile, "focus");
+
+        settings.profile = "work".into();
+        assert_eq!((settings.effective().sound_volume, settings.effective().wander, settings.effective().usage_comments), (25, false, true));
+    }
+
+    #[test]
+    fn el_atajo_de_la_barra_rapida_se_guarda_y_uno_invalido_vuelve_al_de_por_defecto() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.quick_shortcut, DEFAULT_QUICK_SHORTCUT);
+        assert_ne!(DEFAULT_QUICK_SHORTCUT, DEFAULT_SHORTCUT, "no pueden coincidir por defecto");
+        assert!(validate_shortcut(DEFAULT_QUICK_SHORTCUT).is_ok());
+        settings.quick_shortcut = "Ctrl+Alt+Q".into();
+        assert_eq!(Settings::from_json(&settings.to_json()).quick_shortcut, "Ctrl+Alt+Q");
+        for weird in [json!({ "quick_shortcut": "Q" }), json!({ "quick_shortcut": 7 }), json!({ "quick_shortcut": "Shift+Q" })] {
+            assert_eq!(Settings::from_json(&weird).quick_shortcut, DEFAULT_QUICK_SHORTCUT, "{weird}");
+        }
+    }
+
+    #[test]
+    fn un_perfil_desconocido_o_raro_vuelve_a_normal() {
+        for weird in [json!({ "profile": "inventado" }), json!({ "profile": 5 }), json!({}), json!({ "profile": "" })] {
+            assert_eq!(Settings::from_json(&weird).profile, "normal", "{weird}");
+        }
+        assert_eq!(Settings::from_json(&json!({ "profile": "rest" })).profile, "rest");
+        assert_eq!(Settings::default().profile().id, "normal");
+    }
 
     #[test]
     fn por_defecto_usa_gemini_y_la_politica_normal() {

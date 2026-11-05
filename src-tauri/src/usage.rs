@@ -44,14 +44,14 @@ pub fn spawn(app: AppHandle) {
 
     std::thread::spawn(move || {
         std::thread::sleep(GREETING_DELAY);
-        if Settings::load().usage_comments {
+        if Settings::load_effective().usage_comments {
             // Solo un saludo con la mascota: el chat no recibe ningún texto extra.
             crate::publish(&app, Event::RandomAnimation);
         }
         loop {
             // Se sigue observando aunque los comentarios estén apagados: al activarlos no salta uno atrasado.
             let notice = tracker.lock().expect("seguimiento envenenado").observe(idle_seconds(), started.elapsed().as_secs());
-            if let (Some(notice), true) = (notice, Settings::load().usage_comments) {
+            if let (Some(notice), true) = (notice, Settings::load_effective().usage_comments) {
                 announce(&app, notice);
             }
             std::thread::sleep(POLL);

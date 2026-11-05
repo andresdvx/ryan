@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 
-use crate::ai::{LlmProvider, Message, ToolInvocation};
+use crate::ai::{Image, LlmProvider, Message, ToolInvocation};
 use crate::events::{Event, EventBus};
 use crate::executor::{PendingAction, Submission, ToolExecutor};
 use crate::tools::{ToolCall, ToolError, VISION_TOOLS};
@@ -115,12 +115,26 @@ impl Assistant {
     }
 
     pub fn handle_user_message(&self, provider: &dyn LlmProvider, ui: &dyn AssistantUi, text: &str) {
+        self.handle_user_message_with_images(provider, ui, text, Vec::new());
+    }
+
+    /// Como `handle_user_message`, con imágenes que el usuario adjuntó (una captura pegada, una ventana). Si el
+    /// modelo no puede verlas, se avisa y no se envía nada: no se manda un mensaje a medias.
+    pub fn handle_user_message_with_images(&self, provider: &dyn LlmProvider, ui: &dyn AssistantUi, text: &str, images: Vec<Image>) {
         let Ok(_turn) = self.turn.try_lock() else {
             ui.say("Sigo con la tarea anterior; espera un momento.");
             return;
         };
+        if !images.is_empty() && !provider.supports_images() {
+            ui.say("Este modelo de IA no puede ver imágenes. Cambia a un modelo con visión (por ejemplo qwen3.5:9b en Ollama) y vuelve a intentarlo.");
+            return;
+        }
         self.bus.publish(Event::UserMessageReceived { text: text.to_string() });
         self.push(Message::User(text.to_string()));
+        // Cada imagen va justo después del mensaje del usuario; solo se conserva la más reciente de la conversación.
+        for image in images {
+            self.push(Message::Image { note: "Imagen adjuntada por el usuario.".into(), image });
+        }
         let mut tools = self.executor.specs();
         // Una herramienta que produce imágenes no se ofrece a un modelo que no puede verlas.
         if !provider.supports_images() {
@@ -373,6 +387,29 @@ mod tests {
             self.chunks.iter().for_each(|chunk| on_text(chunk));
             self.outcome.clone().map(|text| LlmResponse { text: text.into(), tool_calls: vec![], raw: None })
         }
+    }
+
+    #[test]
+    fn una_imagen_adjunta_llega_al_modelo_despues_del_mensaje_del_usuario() {
+        let (assistant, ..) = setup();
+        let provider = ScriptedProvider::new(vec![text("Veo un error")]).with_vision();
+        let image = Image { mime: "image/png".into(), base64: "AAAA".into() };
+        assistant.handle_user_message_with_images(&provider, &ui(true), "¿qué dice?", vec![image]);
+        let seen = provider.seen.lock().unwrap();
+        assert!(matches!(&seen[0][0], Message::User(t) if t == "¿qué dice?"));
+        assert!(matches!(&seen[0][1], Message::Image { image, .. } if image.base64 == "AAAA"));
+    }
+
+    #[test]
+    fn un_modelo_sin_vision_rechaza_las_imagenes_sin_enviar_nada() {
+        let (assistant, ..) = setup();
+        let provider = ScriptedProvider::new(vec![]); // si se le llamara, el guion vacío haría fallar la prueba
+        let ui = ui(true);
+        let image = Image { mime: "image/png".into(), base64: "AAAA".into() };
+        assistant.handle_user_message_with_images(&provider, &ui, "mira esto", vec![image]);
+        assert!(ui.said.lock().unwrap()[0].contains("no puede ver imágenes"));
+        assert!(provider.seen.lock().unwrap().is_empty(), "no se consultó a la IA");
+        assert!(assistant.history.lock().unwrap().is_empty(), "y el mensaje no quedó a medias en la conversación");
     }
 
     #[test]

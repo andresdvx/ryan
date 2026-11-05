@@ -1,0 +1,62 @@
+:root {
+  color-scheme: dark;
+  --accent-rgb: 139 123 255;
+  --accent-2-rgb: 91 140 255;
+  --accent: rgb(var(--accent-rgb));
+  --bg: #1d1b26;
+  --card: #26232f;
+  --line: rgba(255, 255, 255, 0.1);
+  --text: #f1eef6;
+  --muted: #a8a2b8;
+  --ok: #5fcf80;
+  --danger: #ff6b63;
+  --grad: linear-gradient(135deg, rgb(var(--accent-rgb)), rgb(var(--accent-2-rgb)));
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: transparent; }
+body { padding: 10px; font: 15px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--text); }
+[hidden] { display: none !important; }
+button { font: inherit; }
+
+/* La ventana es transparente: la tarjeta es lo único que se ve. */
+.bar {
+  overflow: hidden; border: 1px solid rgb(var(--accent-rgb) / 0.5); border-radius: 20px; background: var(--bg);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55), 0 0 0 4px rgb(var(--accent-rgb) / 0.12);
+}
+.line { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+.logo {
+  display: grid; width: 34px; height: 34px; flex: none; place-items: center; border-radius: 50%; background: var(--grad); color: #fff; font-size: 16px;
+  box-shadow: 0 4px 12px rgb(var(--accent-2-rgb) / 0.45);
+}
+#q-input { flex: 1; min-width: 0; padding: 8px 4px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 17px; outline: none; }
+#q-input::placeholder { color: #8a849b; }
+.state { flex: none; font-size: 12.5px; color: var(--accent); white-space: nowrap; }
+.state:empty { display: none; }
+.state.busy::before { content: "●"; margin-right: 6px; animation: beat 1s ease-in-out infinite; }
+.close { width: 28px; height: 28px; flex: none; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; }
+.close:hover { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+
+.answer { display: flex; flex-direction: column; gap: 8px; max-height: 380px; padding: 4px 16px 12px; overflow-y: auto; border-top: 1px solid var(--line); }
+.answer .you { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+.answer .reply { white-space: pre-wrap; word-break: break-word; }
+.answer .reply.rich { white-space: normal; }
+.answer .reply.rich > * { margin: 0; }
+.answer .reply.rich > * + * { margin-top: 8px; }
+.answer .reply.rich p { white-space: pre-wrap; }
+.answer .reply.rich ul, .answer .reply.rich ol { padding-left: 20px; }
+.answer .reply.rich code { padding: 1px 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.35); font: 13px Consolas, "Cascadia Mono", monospace; }
+.answer .reply.rich pre { padding: 10px 12px; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: #0f1015; white-space: pre; }
+.answer .reply.streaming::after { content: ""; display: inline-block; width: 7px; height: 1em; margin-left: 2px; vertical-align: -2px; border-radius: 2px; background: var(--accent); animation: blink 1s steps(2, start) infinite; }
+.answer .note { font-size: 13px; color: var(--muted); }
+.answer .note.error { color: var(--danger); }
+.answer a.link { color: color-mix(in srgb, var(--accent) 55%, white); text-decoration: underline; cursor: pointer; word-break: break-all; }
+
+.foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px 10px; border-top: 1px solid var(--line); background: var(--card); }
+.open {
+  padding: 6px 12px; border: 0; border-radius: 999px; background: var(--grad); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.open:hover { filter: brightness(1.1); }
+.foot .hint { font-size: 12px; color: var(--muted); }
+
+@keyframes beat { 50% { opacity: 0.35; } }
+@keyframes blink { to { visibility: hidden; } }

@@ -48,7 +48,14 @@ Está escrito en **Rust** con **Tauri 2**, y puede usar **Gemini, Claude, OpenAI
   </tr>
   <tr>
     <td align="center"><img src="docs/images/hoy.png" alt="Pestaña Hoy con el resumen del día" width="300"><br><sub>Hoy: música, recordatorios y estado del equipo</sub></td>
-    <td></td>
+    <td align="center"><img src="docs/images/modos.png" alt="Modo Trabajo activo" width="300"><br><sub>Modos: Trabajo, Descanso, Concentración…</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/mirar-ventana.png" alt="Vista previa de la ventana antes de adjuntarla" width="300"><br><sub>Mirar una ventana: la ves antes de enviarla</sub></td>
+    <td align="center"><img src="docs/images/editor-herramientas.png" alt="Editor de herramientas por categorías" width="300"><br><sub>Herramientas por categorías, con su nivel de riesgo</sub></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="docs/images/barra-rapida.png" alt="Barra rápida sobre el escritorio" width="420"><br><sub>Barra rápida: pide algo sin abrir el chat (<kbd>Win</kbd> + <kbd>Shift</kbd> + <kbd>J</kbd>)</sub></td>
   </tr>
 </table>
 
@@ -73,7 +80,9 @@ Trae siete personajes; puedes [añadir los tuyos](#añadir-un-personaje).
 | Área | Ejemplos |
 | --- | --- |
 | **Personaje** | Se anima según lo que hace (reposo, pensando, trabajando, contenta…), pasea por el escritorio, mira hacia el cursor, avisa con la batería baja y sugiere descansos. Su tono cambia con la hora, la batería y cuánto llevas trabajando, y reacciona cuando termina una descarga, conectas una memoria USB o se acerca un recordatorio. |
-| **Chat** | Las respuestas se escriben en directo (con Ollama), una paleta de comandos al escribir `/`, y un selector de proveedor y modelo en la cabecera. |
+| **Chat** | Las respuestas se escriben en directo (con Ollama), una paleta de comandos al escribir `/`, y un selector de proveedor y modelo en la cabecera. Puedes **pegar una captura** (Ctrl + V) o pulsar 👁 para **mirar una ventana**: la ves antes de adjuntarla (con un modelo con visión). |
+| **Barra rápida** | Un campo pequeño sobre el escritorio (atajo **Win + Shift + J**) para pedir algo sin abrir el chat. La respuesta aparece ahí, y si algo necesita tu permiso se abre el chat. Todo queda también en el historial. |
+| **Modos** | **Normal, Trabajo, Descanso y Concentración**: cambian a la vez cómo se comporta la mascota (paseos, comentarios, sonidos) y el tono de las respuestas, y los atajos de *Hoy*. Se aplican por encima de tus ajustes: al volver a Normal todo queda como lo tenías. |
 | **Hoy** | Una pestaña con lo importante de un vistazo: lo que suena (con controles), tus próximos recordatorios, batería, memoria y espacio en disco, tu última conversación y atajos para pedir cosas con un clic. |
 | **Historial** | Tus conversaciones se guardan en tu equipo. Puedes buscarlas (sin importar mayúsculas ni tildes), releerlas y **continuarlas**: Ryan recupera lo que hablasteis. Se puede apagar y borrar en cualquier momento. |
 | **Archivos** | Crear, leer, buscar, mover, renombrar y **borrar enviando a la Papelera de Windows** (recuperable, nunca permanente). Copiar, comprimir y descomprimir `.zip`, y abrir carpetas o documentos. Organizar una carpeta por tipos y deshacerlo. Solo en Escritorio, Documentos y Descargas. |
@@ -149,10 +158,10 @@ Elige *Ollama (modelo local)*; mira [Modelos locales con Ollama](#modelos-locale
 | **Compañero** | Nombre del asistente (la IA lo conoce), avatar, si pasea y mira al cursor, comentarios sobre tu uso del equipo y memoria. |
 | **IA** | Proveedor, modelo, API key o dirección de Ollama. |
 | **Avisos** | Sonidos y volumen, avisos de batería, y avisos de descargas terminadas y memorias USB conectadas. |
-| **Sistema** | Atajo de teclado, iniciar con Windows y qué aplicaciones puede abrir la IA. |
-| **Seguridad** | Confirmación en todas las acciones, control de otras aplicaciones y qué herramientas están activas. |
+| **Sistema** | Atajos de teclado (chat y barra rápida), iniciar con Windows y qué aplicaciones puede abrir la IA, con buscador y botones para activar o desactivar varias a la vez. |
+| **Seguridad** | Confirmación en todas las acciones, control de otras aplicaciones y qué herramientas están activas: agrupadas por categoría, con buscador, el nivel de riesgo de cada una y botones para activar o desactivar todo un grupo. |
 
-El atajo para abrir el chat es **Win + Shift + K** (si otro programa lo usa, prueba con **Ctrl + Alt + K**); puedes cambiarlo en *Ajustes > Sistema*.
+El atajo para abrir el chat es **Win + Shift + K** (si otro programa lo usa, prueba con **Ctrl + Alt + K**) y el de la barra rápida, **Win + Shift + J**; ambos se cambian en *Ajustes > Sistema*.
 
 ## Ejecución
 
@@ -242,7 +251,7 @@ Limitaciones con Ollama:
 
 El historial guarda solo lo que se ve en el chat (tus mensajes y las respuestas), nunca imágenes ni claves: un mensaje que parece contener una contraseña o una clave no se guarda. Se puede apagar y borrar desde la pestaña *Historial*, se limita a las 200 conversaciones más recientes y no sale de tu equipo.
 
-Lo que escribes en el chat se envía al proveedor de IA que hayas elegido (con Ollama no sale de tu equipo). Una captura de ventana solo se envía cuando confirmas cada vez, no se guarda en disco y solo se conserva la más reciente durante la conversación.
+Lo que escribes en el chat se envía al proveedor de IA que hayas elegido (con Ollama no sale de tu equipo). Las imágenes que pegas o adjuntas con 👁 solo se envían con el mensaje que las acompaña, se comprueban antes (solo PNG o JPEG reales, hasta 3 por mensaje) y no se guardan en el historial. Una captura de ventana que pide la IA solo se envía cuando confirmas cada vez, no se guarda en disco y solo se conserva la más reciente durante la conversación.
 
 ## Personalizar
 

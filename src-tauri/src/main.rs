@@ -30,6 +30,7 @@ mod media;
 mod music;
 mod notify;
 mod power;
+mod profiles;
 mod secrets;
 mod system_events;
 mod usage;
@@ -135,6 +136,127 @@ fn hide_chat(app: AppHandle) {
     hide_chat_window(&app);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Barra rápida: un campo pequeño sobre el escritorio, con su propio atajo, para pedir algo sin abrir el chat.
+// ---------------------------------------------------------------------------------------------
+
+const QUICK_WIDTH: f64 = 640.0;
+const QUICK_MIN_HEIGHT: f64 = 90.0;
+const QUICK_MAX_HEIGHT: f64 = 560.0;
+/// A qué altura del área de trabajo aparece la barra (como una fracción desde arriba).
+const QUICK_TOP_RATIO: f64 = 0.16;
+
+/// Atajo global de la barra rápida registrado ahora mismo y su texto.
+#[derive(Default)]
+struct ActiveQuickShortcut(Mutex<Option<(Shortcut, String)>>);
+
+fn position_quick(window: &WebviewWindow) -> tauri::Result<()> {
+    if let Some(monitor) = window.primary_monitor()? {
+        let area = monitor.work_area();
+        let size = window.outer_size()?;
+        let x = area.position.x + (area.size.width as i32 - size.width as i32) / 2;
+        let y = area.position.y + (area.size.height as f64 * QUICK_TOP_RATIO) as i32;
+        window.set_position(PhysicalPosition::new(x, y))?;
+    }
+    Ok(())
+}
+
+fn show_quick(app: &AppHandle) {
+    let Some(quick) = app.get_webview_window("quick") else { return };
+    let _ = position_quick(&quick);
+    let _ = quick.show();
+    let _ = quick.set_focus();
+    // La página se limpia y se pone a escribir.
+    let _ = app.emit("quick-opened", ());
+}
+
+fn hide_quick(app: &AppHandle) {
+    if let Some(quick) = app.get_webview_window("quick") {
+        let _ = quick.hide();
+    }
+}
+
+fn toggle_quick(app: &AppHandle) {
+    match app.get_webview_window("quick") {
+        Some(quick) if quick.is_visible().unwrap_or(false) => hide_quick(app),
+        Some(_) => show_quick(app),
+        None => {}
+    }
+}
+
+#[tauri::command]
+fn hide_quick_cmd(app: AppHandle) {
+    hide_quick(&app);
+}
+
+/// La página ajusta la altura de la ventana a lo que muestra (la ventana es transparente: no debe tapar nada de más).
+#[tauri::command]
+fn resize_quick(app: AppHandle, height: f64) {
+    if let Some(quick) = app.get_webview_window("quick") {
+        let _ = quick.set_size(LogicalSize::new(QUICK_WIDTH, height.clamp(QUICK_MIN_HEIGHT, QUICK_MAX_HEIGHT)));
+    }
+}
+
+/// Lo escrito en la barra rápida sigue el mismo camino que el chat; el chat (aunque esté oculto) lo muestra como suyo.
+#[tauri::command]
+fn quick_submit(app: AppHandle, text: String) {
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return;
+    }
+    let _ = app.emit("quick-user-message", text.clone());
+    std::thread::spawn(move || handle_chat_text(&app, &text, Vec::new()));
+}
+
+#[tauri::command]
+fn open_chat_from_quick(app: AppHandle) {
+    hide_quick(&app);
+    show_chat(&app);
+}
+
+/// Cambia el atajo de la barra rápida: registra el nuevo antes de soltar el anterior.
+#[tauri::command]
+fn set_quick_shortcut(app: AppHandle, shortcut: String) -> Result<(), String> {
+    let new = parse_shortcut(&shortcut)?;
+    if app.state::<ActiveShortcut>().0.lock().expect("atajo envenenado").as_ref().is_some_and(|(chat, _)| *chat == new) {
+        return Err("Ese atajo ya abre el chat: elige otro distinto.".into());
+    }
+    let state = app.state::<ActiveQuickShortcut>();
+    let mut active = state.0.lock().expect("atajo envenenado");
+    if active.as_ref().is_some_and(|(current, _)| *current == new) {
+        let mut settings = Settings::load();
+        settings.quick_shortcut = shortcut.clone();
+        settings.save()?;
+        *active = Some((new, shortcut));
+        return Ok(());
+    }
+    app.global_shortcut()
+        .register(new.clone())
+        .map_err(|_| "No se pudo registrar ese atajo: probablemente Windows u otra aplicación ya lo usa.".to_string())?;
+    if let Some((old, _)) = active.take() {
+        let _ = app.global_shortcut().unregister(old);
+    }
+    *active = Some((new, shortcut.clone()));
+    let mut settings = Settings::load();
+    settings.quick_shortcut = shortcut;
+    settings.save()
+}
+
+/// Registra el atajo guardado de la barra rápida; si no se puede, la barra sigue disponible desde el chat.
+fn register_quick_shortcut(app: &AppHandle, wanted: &str) {
+    let Ok(shortcut) = parse_shortcut(wanted) else { return };
+    let chat_uses_it = app.state::<ActiveShortcut>().0.lock().expect("atajo envenenado").as_ref().is_some_and(|(chat, _)| *chat == shortcut);
+    if chat_uses_it {
+        eprintln!("El atajo {wanted} ya abre el chat; la barra rápida queda sin atajo");
+        return;
+    }
+    if app.global_shortcut().register(shortcut.clone()).is_ok() {
+        *app.state::<ActiveQuickShortcut>().0.lock().expect("atajo envenenado") = Some((shortcut, wanted.to_string()));
+    } else {
+        eprintln!("El atajo {wanted} no está disponible; la barra rápida queda sin atajo");
+    }
+}
+
 /// Atajo global registrado ahora mismo (puede ser el de respaldo) y su texto.
 #[derive(Default)]
 struct ActiveShortcut(Mutex<Option<(Shortcut, String)>>);
@@ -220,6 +342,9 @@ impl AssistantUi for ChatUi {
     }
 
     fn confirm(&self, action: &PendingAction) -> bool {
+        // La confirmación vive en el chat: si la petición salió de la barra rápida, se pasa al chat para que la vea.
+        hide_quick(&self.app);
+        show_chat(&self.app);
         let (sender, receiver) = mpsc::channel();
         let waiters = self.app.state::<ConfirmationWaiters>();
         let id = waiters.add(sender);
@@ -253,7 +378,7 @@ impl AssistantUi for ChatUi {
         let time = format!("Fecha y hora local del usuario: {}.", now.describe());
         // Cuánto llevas trabajando es un dato de uso: si apagaste los comentarios sobre el equipo, no se usa.
         let worked_minutes = match self.app.try_state::<usage::Activity>() {
-            Some(activity) if Settings::load().usage_comments => activity.worked_minutes(),
+            Some(activity) if Settings::load_effective().usage_comments => activity.worked_minutes(),
             _ => 0,
         };
         let mood = zen_desktop::mood::mood_section(zen_desktop::mood::MoodInput {
@@ -261,6 +386,9 @@ impl AssistantUi for ChatUi {
             battery: zen_desktop::power::read_battery(),
             worked_minutes,
         });
+        // El perfil activo (Trabajo, Descanso…) cambia el tono con el que responde la IA.
+        let tone = Settings::load().profile().tone;
+        let mood = if tone.is_empty() { mood } else { format!("{mood}\n{tone}") };
         let time = format!("{time}
 
 {mood}");
@@ -317,8 +445,11 @@ fn handle_tool_command(app: &AppHandle, rest: &str) {
     }
 }
 
-fn handle_chat_text(app: &AppHandle, text: &str) {
+fn handle_chat_text(app: &AppHandle, text: &str, images: Vec<zen_core::ai::Image>) {
     let text = text.trim();
+    // Con imágenes y sin texto, se pide lo más natural: que las describa.
+    let default_text = "Mira esta imagen y dime qué ves.";
+    let text = if text.is_empty() && !images.is_empty() { default_text } else { text };
 
     // La clave nunca se registra ni se publica como evento.
     if text == "/key" {
@@ -376,9 +507,13 @@ fn handle_chat_text(app: &AppHandle, text: &str) {
     } else {
         text
     };
-    record_chat(app, zen_desktop::conversations::Role::User, stored);
-    app.state::<Arc<Assistant>>()
-        .handle_user_message(provider.as_ref(), &ChatUi::new(app.clone()), text);
+    let stored = match images.len() {
+        0 => stored.to_string(),
+        1 => format!("{stored}\n📎 1 imagen adjunta"),
+        n => format!("{stored}\n📎 {n} imágenes adjuntas"),
+    };
+    record_chat(app, zen_desktop::conversations::Role::User, &stored);
+    app.state::<Arc<Assistant>>().handle_user_message_with_images(provider.as_ref(), &ChatUi::new(app.clone()), text, images);
 }
 
 /// Guarda en el historial lo que se ve en el chat, si el usuario no lo apagó en Ajustes.
@@ -391,9 +526,35 @@ fn record_chat(app: &AppHandle, role: zen_desktop::conversations::Role, text: &s
     }
 }
 
+/// `images`: lo que el usuario adjuntó, como `[{ "mime": "image/png", "data": "<base64>" }]`.
 #[tauri::command]
-fn submit_message(app: AppHandle, text: String) {
-    std::thread::spawn(move || handle_chat_text(&app, &text));
+fn submit_message(app: AppHandle, text: String, images: Option<Vec<Value>>) {
+    let pairs: Vec<(String, String)> = images
+        .unwrap_or_default()
+        .iter()
+        .map(|item| (item["mime"].as_str().unwrap_or("").to_string(), item["data"].as_str().unwrap_or("").to_string()))
+        .collect();
+    std::thread::spawn(move || match zen_desktop::attachments::validate_images(&pairs) {
+        Ok(images) => handle_chat_text(&app, &text, images),
+        Err(error) => say(&app, format!("No pude adjuntar la imagen: {error}")),
+    });
+}
+
+/// Ventanas que se pueden mirar con el botón «mirar una ventana» (sin terminales, contraseñas ni pagos).
+#[tauri::command]
+async fn list_capturable_windows() -> Result<Vec<Value>, String> {
+    let windows = tauri::async_runtime::spawn_blocking(zen_desktop::capturable_windows).await.map_err(|e| e.to_string())?;
+    Ok(windows.into_iter().map(|(title, process)| json!({ "title": title, "process": process })).collect())
+}
+
+/// Captura una ventana a petición del usuario y la devuelve para que la vea antes de enviarla. Nada se envía
+/// ni se guarda aquí: la imagen solo viaja si el usuario la adjunta a un mensaje.
+#[tauri::command]
+async fn capture_window_preview(title: Option<String>) -> Result<Value, String> {
+    let capture = tauri::async_runtime::spawn_blocking(move || zen_desktop::capture_for_user(title.as_deref()))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(json!({ "title": capture.title, "process": capture.process, "width": capture.width, "height": capture.height, "mime": "image/png", "data": capture.base64 }))
 }
 
 type Store<'a> = tauri::State<'a, Arc<zen_desktop::conversations::Conversations>>;
@@ -464,8 +625,10 @@ fn get_system_status() -> Value {
 
 /// Recordatorios pendientes para la pestaña Recordatorios, del que vence antes al que vence después.
 #[tauri::command]
-fn list_reminders(reminders: tauri::State<Arc<zen_desktop::Reminders>>) -> Value {
-    let items: Vec<Value> = reminders.list().iter().map(|r| json!({ "id": r.id, "text": r.text, "due": r.due })).collect();
+fn list_reminders(app: AppHandle) -> Value {
+    // Antes de terminar el arranque todavía no hay almacén: se responde con una lista vacía.
+    let pending = app.try_state::<Arc<zen_desktop::Reminders>>().map(|reminders| reminders.list()).unwrap_or_default();
+    let items: Vec<Value> = pending.iter().map(|r| json!({ "id": r.id, "text": r.text, "due": r.due })).collect();
     json!({ "items": items, "max": zen_desktop::MAX_REMINDERS, "now": zen_desktop::unix_now() })
 }
 
@@ -491,7 +654,14 @@ fn provider_kind(id: &str) -> Result<ProviderKind, String> {
 
 /// Estado de los ajustes para la pestaña Ajustes. Las claves nunca se devuelven, solo su origen.
 #[tauri::command]
-fn get_settings(app: AppHandle) -> Value {
+/// Puede llamarse antes de que `setup` termine de registrar los estados (la página carga en paralelo): en ese caso
+/// se responde con un error y la interfaz lo reintenta, en vez de hacer fallar la aplicación.
+fn get_settings(app: AppHandle) -> Result<Value, String> {
+    let (Some(executor), Some(chat_shortcut), Some(quick_shortcut)) =
+        (app.try_state::<Arc<ToolExecutor>>(), app.try_state::<ActiveShortcut>(), app.try_state::<ActiveQuickShortcut>())
+    else {
+        return Err("La aplicación aún está arrancando.".into());
+    };
     let settings = Settings::load();
     let providers: Vec<Value> = ProviderKind::ALL
         .iter()
@@ -505,25 +675,34 @@ fn get_settings(app: AppHandle) -> Value {
                 "key_url": kind.key_url(),
                 "env_var": kind.env_var(),
                 "needs_key": kind.needs_key(),
+                "vision": kind.supports_images(),
             })
         })
         .collect();
-    let tools: Vec<Value> = app
-        .state::<Arc<ToolExecutor>>()
-        .all_specs()
+    let tools: Vec<Value> = executor
+        .all_with_risk()
         .iter()
-        .map(|spec| json!({ "name": spec.name, "description": spec.description, "enabled": settings.is_tool_enabled(&spec.name) }))
+        .map(|(spec, risk)| {
+            json!({ "name": spec.name, "description": spec.description, "enabled": settings.is_tool_enabled(&spec.name), "risk": risk_name(*risk) })
+        })
         .collect();
-    let active_shortcut = app.state::<ActiveShortcut>().0.lock().expect("atajo envenenado").as_ref().map(|(_, text)| text.clone());
-    json!({
+    let active_shortcut = chat_shortcut.0.lock().expect("atajo envenenado").as_ref().map(|(_, text)| text.clone());
+    Ok(json!({
         "provider": settings.provider.id(),
         "providers": providers,
         "ollama_url": settings.ollama_url,
         "ollama_think": settings.ollama_think,
         "save_history": settings.save_history,
+        "profile": settings.profile,
+        "profiles": profiles::PROFILES
+            .iter()
+            .map(|p| json!({ "id": p.id, "name": p.name, "icon": p.icon, "description": p.description, "changes": p.changes() }))
+            .collect::<Vec<Value>>(),
         "default_ollama_url": zen_ai::DEFAULT_OLLAMA_URL,
         "shortcut": settings.shortcut,
         "shortcut_active": active_shortcut,
+        "quick_shortcut": settings.quick_shortcut,
+        "quick_shortcut_active": quick_shortcut.0.lock().expect("atajo envenenado").as_ref().map(|(_, text)| text.clone()),
         "default_shortcut": settings::DEFAULT_SHORTCUT,
         "autostart": app.autolaunch().is_enabled().unwrap_or(false),
         "confirm_all": settings.confirm_all,
@@ -540,7 +719,7 @@ fn get_settings(app: AppHandle) -> Value {
         "memory_enabled": settings.memory_enabled,
         "usage_comments": settings.usage_comments,
         "music_reaction": settings.music_reaction,
-    })
+    }))
 }
 #[tauri::command]
 fn set_provider(app: AppHandle, id: String) -> Result<(), String> {
@@ -613,6 +792,22 @@ fn set_confirm_all(app: AppHandle, value: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Activa o desactiva varias herramientas de una vez (los botones «todas» y «ninguna» de Ajustes).
+#[tauri::command]
+fn set_tools_enabled(app: AppHandle, names: Vec<String>, enabled: bool) -> Result<(), String> {
+    let known: Vec<String> = app.state::<Arc<ToolExecutor>>().all_specs().into_iter().map(|spec| spec.name).collect();
+    if let Some(unknown) = names.iter().find(|name| !known.contains(name)) {
+        return Err(format!("La herramienta «{unknown}» no existe."));
+    }
+    let mut settings = Settings::load();
+    for name in &names {
+        settings.set_tool_enabled(name, enabled);
+    }
+    settings.save()?;
+    apply_policy(&app, &settings);
+    Ok(())
+}
+
 #[tauri::command]
 fn set_tool_enabled(app: AppHandle, name: String, enabled: bool) -> Result<(), String> {
     if !app.state::<Arc<ToolExecutor>>().all_specs().iter().any(|spec| spec.name == name) {
@@ -629,20 +824,37 @@ fn set_tool_enabled(app: AppHandle, name: String, enabled: bool) -> Result<(), S
 #[tauri::command]
 fn set_behavior(app: AppHandle, name: String, enabled: bool) -> Result<(), String> {
     let mut settings = Settings::load();
-    let flags = app.state::<Arc<BehaviorFlags>>();
     match name.as_str() {
-        "wander" => {
-            settings.wander = enabled;
-            flags.wander.store(enabled, std::sync::atomic::Ordering::Relaxed);
-        }
-        "look_at_cursor" => {
-            settings.look_at_cursor = enabled;
-            flags.look_at_cursor.store(enabled, std::sync::atomic::Ordering::Relaxed);
-        }
+        "wander" => settings.wander = enabled,
+        "look_at_cursor" => settings.look_at_cursor = enabled,
         "music_reaction" => settings.music_reaction = enabled,
         _ => return Err(format!("Comportamiento desconocido: {name}")),
     }
-    settings.save()
+    settings.save()?;
+    sync_flags(&app, &settings);
+    Ok(())
+}
+
+/// Lo que la mascota hace de verdad es lo que el usuario configuró con el perfil activo por encima.
+fn sync_flags(app: &AppHandle, settings: &Settings) {
+    let live = settings.effective();
+    let flags = app.state::<Arc<BehaviorFlags>>();
+    flags.wander.store(live.wander, std::sync::atomic::Ordering::Relaxed);
+    flags.look_at_cursor.store(live.look_at_cursor, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Cambia de perfil (Normal, Trabajo, Descanso, Concentración). Se aplica al instante y no toca los ajustes del usuario.
+#[tauri::command]
+fn set_profile(app: AppHandle, id: String) -> Result<(), String> {
+    let profile = profiles::find(&id).ok_or_else(|| format!("Perfil desconocido: {id}"))?;
+    let mut settings = Settings::load();
+    settings.profile = profile.id.to_string();
+    settings.save()?;
+    sync_flags(&app, &settings);
+    let _ = app.emit("profile-changed", profile.id);
+    // Un gesto de la mascota para que se note el cambio.
+    publish(&app, Event::RandomAnimation);
+    Ok(())
 }
 
 /// Sonidos y avisos: `enabled`/`volume` (0-100) de los sonidos, `battery_alerts` y `system_events`. Cada campo es opcional.
@@ -803,6 +1015,26 @@ fn set_builtin_app(app: AppHandle, key: String, enabled: bool) -> Result<(), Str
     save_apps(&catalog)
 }
 
+/// Permite o quita varias aplicaciones del menú Inicio de una vez. Las que no se pueden permitir se saltan y se cuentan.
+#[tauri::command]
+fn set_custom_apps(app: AppHandle, app_ids: Vec<String>, enabled: bool) -> Result<String, String> {
+    let catalog = app.state::<Arc<zen_desktop::AppCatalog>>();
+    let mut skipped = 0;
+    let mut first_error = None;
+    for app_id in &app_ids {
+        if let Err(error) = catalog.set_custom_enabled(app_id, enabled) {
+            skipped += 1;
+            first_error.get_or_insert(error);
+        }
+    }
+    save_apps(&catalog)?;
+    match (skipped, first_error) {
+        (0, _) => Ok(String::new()),
+        (n, Some(error)) if n == app_ids.len() => Err(error),
+        (n, _) => Ok(format!("{n} aplicaciones no se pudieron cambiar.")),
+    }
+}
+
 #[tauri::command]
 fn set_custom_app(app: AppHandle, app_id: String, enabled: bool) -> Result<(), String> {
     let catalog = app.state::<Arc<zen_desktop::AppCatalog>>();
@@ -832,6 +1064,9 @@ fn parse_shortcut(text: &str) -> Result<Shortcut, String> {
 #[tauri::command]
 fn set_shortcut(app: AppHandle, shortcut: String) -> Result<(), String> {
     let new = parse_shortcut(&shortcut)?;
+    if app.state::<ActiveQuickShortcut>().0.lock().expect("atajo envenenado").as_ref().is_some_and(|(quick, _)| *quick == new) {
+        return Err("Ese atajo ya abre la barra rápida: elige otro distinto.".into());
+    }
     let state = app.state::<ActiveShortcut>();
     let mut active = state.0.lock().expect("atajo envenenado");
     if active.as_ref().is_some_and(|(current, _)| *current == new) {
@@ -912,8 +1147,16 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_chat(app)))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
+                .with_handler(|app, shortcut, event| {
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    let is_quick = app
+                        .try_state::<ActiveQuickShortcut>()
+                        .is_some_and(|state| state.0.lock().is_ok_and(|active| active.as_ref().is_some_and(|(quick, _)| quick == shortcut)));
+                    if is_quick {
+                        toggle_quick(app);
+                    } else {
                         toggle_chat(app);
                     }
                 })
@@ -924,6 +1167,16 @@ fn main() {
             toggle_chat_cmd,
             hide_chat,
             submit_message,
+            set_profile,
+            hide_quick_cmd,
+            resize_quick,
+            quick_submit,
+            open_chat_from_quick,
+            set_quick_shortcut,
+            set_tools_enabled,
+            set_custom_apps,
+            list_capturable_windows,
+            capture_window_preview,
             list_conversations,
             load_conversation,
             resume_conversation,
@@ -977,7 +1230,8 @@ fn main() {
             place_in_corner(&pet)?;
             let bus = Arc::new(EventBus::new());
             let settings = Settings::load();
-            let flags = Arc::new(BehaviorFlags::new(settings.wander, settings.look_at_cursor));
+            let live = settings.effective();
+            let flags = Arc::new(BehaviorFlags::new(live.wander, live.look_at_cursor));
             behavior::spawn(app.handle().clone(), bus.clone(), flags.clone());
             app.manage(flags);
 
@@ -1016,6 +1270,8 @@ fn main() {
             app.manage(bus);
             app.manage(ActiveShortcut::default());
             register_shortcut(app.handle(), &settings.shortcut);
+            app.manage(ActiveQuickShortcut::default());
+            register_quick_shortcut(app.handle(), &settings.quick_shortcut);
             build_tray(app.handle())?;
             // Al final: los avisos usan el bus de eventos, que ya debe estar registrado.
             // La pestaña Recordatorios de la interfaz lee y cambia este mismo almacén.

@@ -104,6 +104,23 @@ function addMessage(role, text) {
   addToHistory(buildMessage(role, text));
 }
 
+// Un mensaje del usuario con las miniaturas de las imágenes que adjuntó.
+function addUserMessage(text, images = []) {
+  const el = buildMessage("user", text);
+  if (images.length) {
+    const strip = document.createElement("div");
+    strip.className = "attached";
+    for (const image of images) {
+      const thumb = document.createElement("img");
+      thumb.src = `data:${image.mime};base64,${image.data}`;
+      thumb.alt = image.label || "Imagen adjunta";
+      strip.append(thumb);
+    }
+    el.insertBefore(strip, el.firstChild);
+  }
+  addToHistory(el);
+}
+
 // Frases para esperar: cambian en cada espera, pero no a mitad de ella.
 const WAITING = {
   thinking: ["Pensando…", "Déjame ver…", "Mmm, a ver…", "Un momentito…"],
@@ -225,17 +242,22 @@ input.addEventListener("input", () => (recallIndex = null));
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
-  if (!text) return;
+  const attached = pendingImages.splice(0);
+  if (!text && !attached.length) return;
+  attachmentsEl.querySelector(".attach-note")?.remove();
   recallIndex = null;
   input.value = "";
   hidePalette();
+  closeLook();
+  renderAttachments();
   // «/modelo» no se envía a la IA: abre el selector de modelo de la cabecera.
-  if (text.toLowerCase() === "/modelo") return openModelMenu();
-  remember(text);
+  if (text.toLowerCase() === "/modelo" && !attached.length) return openModelMenu();
+  if (text) remember(text);
   hideIdeas();
   // La API key no debe quedar a la vista en el historial.
-  addMessage("user", text.startsWith("/key ") ? "/key ••••••••" : text);
-  invoke("submit_message", { text });
+  const shown = text.startsWith("/key ") ? "/key ••••••••" : text || "Mira esta imagen y dime qué ves.";
+  addUserMessage(shown, attached);
+  invoke("submit_message", { text, images: attached.map(({ mime, data }) => ({ mime, data })) });
 });
 
 document.getElementById("close").addEventListener("click", () => invoke("hide_chat"));
@@ -361,6 +383,11 @@ window.__TAURI__.event.listen("chat-final", (e) => {
   if (!endStream(e.payload)) addMessage("assistant", e.payload);
 });
 window.__TAURI__.event.listen("chat-stream-abort", () => endStream(null));
+// Lo que se pide desde la barra rápida también queda en la conversación del chat.
+window.__TAURI__.event.listen("quick-user-message", (e) => {
+  hideIdeas();
+  addUserMessage(e.payload);
+});
 window.__TAURI__.event.listen("reminder", (e) => addMessage("assistant reminder", `⏰ ${e.payload}`));
 function showConfirmation({ id, tool, preview, risk, detailed }) {
   const card = document.createElement("div");
@@ -746,6 +773,11 @@ const ccWarning = document.getElementById("cc-warning");
 const ccMessage = document.getElementById("cc-message");
 const confirmAllBox = document.getElementById("confirm-all");
 const toolsList = document.getElementById("tools-list");
+const toolsSearch = document.getElementById("tools-search");
+const toolsCount = document.getElementById("tools-count");
+const toolsAllOn = document.getElementById("tools-all-on");
+const toolsAllOff = document.getElementById("tools-all-off");
+let toolsVisible = [];
 const toolsMessage = document.getElementById("tools-message");
 const avatarsEl = document.getElementById("avatars");
 const avatarMessage = document.getElementById("avatar-message");
@@ -790,6 +822,7 @@ function renderSettings() {
   deleteKey.disabled = p.key_source !== "stored";
 
   renderShortcut();
+  renderQuickShortcut();
   autostartBox.checked = settings.autostart;
   renderAvatars();
   nameInput.value = settings.assistant_name;
@@ -812,6 +845,7 @@ function renderSettings() {
   ollamaThinkBox.checked = Boolean(settings.ollama_think);
   historySave.checked = settings.save_history !== false;
   updateModelPill();
+  renderProfile();
 }
 
 // --- Aplicaciones que la IA puede abrir ---
@@ -823,7 +857,12 @@ const appsFilter = document.getElementById("apps-filter");
 const appsRefresh = document.getElementById("apps-refresh");
 const appsHint = document.getElementById("apps-hint");
 const appsMessage = document.getElementById("apps-message");
+const appsOnlyEnabled = document.getElementById("apps-only-enabled");
+const appsAllOn = document.getElementById("apps-all-on");
+const appsAllOff = document.getElementById("apps-all-off");
+const appsCount = document.getElementById("apps-count");
 let appsData = null;
+let appsShown = [];
 
 function appCheckbox(name, checked, note, onChange) {
   const label = document.createElement("label");
@@ -866,7 +905,10 @@ function renderApps() {
     ),
   );
   const needle = appsFilter.value.trim().toLowerCase();
-  const shown = appsData.apps.filter((app) => app.name.toLowerCase().includes(needle));
+  const shown = appsData.apps.filter((app) => app.name.toLowerCase().includes(needle) && (!appsOnlyEnabled.checked || app.enabled));
+  const enabledCount = appsData.apps.filter((app) => app.enabled).length;
+  appsCount.textContent = `${enabledCount} de ${appsData.apps.length} activadas${shown.length !== appsData.apps.length ? ` · se ven ${shown.length}` : ""}.`;
+  appsShown = shown;
   appsList.replaceChildren(
     ...(shown.length
       ? shown.map((app) => appCheckbox(app.name, app.enabled, "", (box) => changeApp("set_custom_app", { app_id: app.app_id, enabled: box.checked })))
@@ -897,6 +939,22 @@ appsDetails.addEventListener("toggle", () => {
 });
 appsRefresh.addEventListener("click", () => loadApps(true));
 appsFilter.addEventListener("input", renderApps);
+appsOnlyEnabled.addEventListener("change", renderApps);
+
+// Activar o desactivar de golpe las aplicaciones que se ven con el filtro actual.
+async function bulkApps(enabled) {
+  const ids = appsShown.filter((app) => app.enabled !== enabled).map((app) => app.app_id);
+  if (!ids.length) return setMessage(appsMessage, enabled ? "Ya están todas activadas." : "Ya están todas desactivadas.", "ok");
+  try {
+    const warning = await invoke("set_custom_apps", { appIds: ids, enabled });
+    setMessage(appsMessage, warning || `${ids.length} aplicaciones ${enabled ? "activadas" : "desactivadas"}.`, warning ? "error" : "ok");
+  } catch (error) {
+    setMessage(appsMessage, String(error), "error");
+  }
+  await loadApps(false);
+}
+appsAllOn.addEventListener("click", () => bulkApps(true));
+appsAllOff.addEventListener("click", () => bulkApps(false));
 
 // Los personajes se describen en assets/characters.json, el mismo archivo que usa la mascota.
 let characterManifest = null;
@@ -951,39 +1009,113 @@ function renderShortcut() {
         : `Ahora: ${label(active)}.`;
 }
 
-// Qué herramientas dejó desplegadas el usuario (se conserva al volver a dibujar la lista).
-const openTools = new Set();
+// Las herramientas se agrupan por categoría y cada una dice cuándo te pide permiso.
+const TOOL_CATEGORIES = [
+  ["Archivos", ["create_file", "create_folder", "list_files", "read_file", "search_files", "move_file", "copy_file", "delete_file", "organize_folder", "undo_organize", "open_path", "zip_files", "unzip_file"]],
+  ["Espacio en disco", ["find_large_files", "folder_sizes", "find_duplicates", "empty_recycle_bin"]],
+  ["Música y multimedia", ["play_music", "search_music", "media_control"]],
+  ["Internet y aplicaciones", ["web_search", "open_website", "open_application"]],
+  ["Sistema", ["system_info", "set_brightness", "read_clipboard", "write_clipboard"]],
+  ["Recordatorios y memoria", ["set_reminder", "list_reminders", "cancel_reminder", "remember", "forget"]],
+  ["Pantalla y otras ventanas", ["look_at_screen", "list_windows", "list_controls", "type_text", "press_keys", "click_control"]],
+];
+// Estas solo funcionan si además está activado «Control de otras aplicaciones».
+const CONTROL_TOOLS = ["list_windows", "list_controls", "type_text", "press_keys", "click_control"];
+const RISK_LABEL = { safe: "Segura", confirm: "Pide permiso", dangerous: "Peligrosa" };
 
-// Cada herramienta es un acordeón: a la vista solo su nombre y su casilla; la descripción, al desplegarla.
+// Qué grupos dejó desplegados el usuario (se conserva al volver a dibujar la lista).
+const openGroups = new Set();
+
+const categoryOf = (name) => TOOL_CATEGORIES.find(([, names]) => names.includes(name))?.[0] ?? "Otras";
+const humanToolName = (name) => name.replaceAll("_", " ");
+
+function toolRow(tool) {
+  const row = document.createElement("label");
+  row.className = "tool-row";
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = tool.enabled;
+  box.setAttribute("aria-label", `Permitir ${humanToolName(tool.name)}`);
+  box.addEventListener("change", () => changeSetting(toolsMessage, "set_tool_enabled", { name: tool.name, enabled: box.checked }));
+
+  const body = document.createElement("div");
+  body.className = "tool-body";
+  const head = document.createElement("div");
+  head.className = "tool-head";
+  const name = document.createElement("strong");
+  name.textContent = humanToolName(tool.name);
+  const risk = document.createElement("span");
+  risk.className = `risk ${tool.risk}`;
+  risk.textContent = RISK_LABEL[tool.risk] ?? tool.risk;
+  head.append(name, risk);
+  if (CONTROL_TOOLS.includes(tool.name) && !settings.computer_control) {
+    const note = document.createElement("span");
+    note.className = "risk muted";
+    note.textContent = "necesita el control de otras aplicaciones";
+    head.append(note);
+  }
+  const desc = document.createElement("p");
+  desc.className = "desc";
+  desc.textContent = tool.description;
+  body.append(head, desc);
+
+  row.append(box, body);
+  return row;
+}
+
+function toolGroup(category, tools, forceOpen) {
+  const details = document.createElement("details");
+  details.className = "tool-group";
+  details.open = forceOpen || openGroups.has(category);
+  details.addEventListener("toggle", () => (details.open ? openGroups.add(category) : openGroups.delete(category)));
+
+  const summary = document.createElement("summary");
+  const name = document.createElement("span");
+  name.className = "g-name";
+  name.textContent = category;
+  const count = document.createElement("span");
+  count.className = "g-count";
+  count.textContent = `${tools.filter((t) => t.enabled).length}/${tools.length}`;
+  const all = tools.every((t) => t.enabled);
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "g-toggle";
+  toggle.textContent = all ? "Ninguna" : "Todas";
+  toggle.title = all ? "Desactivar todas las de este grupo" : "Activar todas las de este grupo";
+  // El botón vive en la cabecera del acordeón: pulsarlo no debe plegarlo ni desplegarlo.
+  toggle.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    changeSetting(toolsMessage, "set_tools_enabled", { names: tools.map((t) => t.name), enabled: !all });
+  });
+  summary.append(name, count, toggle);
+  details.append(summary, ...tools.map(toolRow));
+  return details;
+}
+
 function renderTools() {
+  const needle = toolsSearch.value.trim().toLowerCase();
+  const all = settings.tools;
+  toolsCount.textContent = `${all.filter((t) => t.enabled).length}/${all.length}`;
+  const visible = all.filter((t) => !needle || humanToolName(t.name).includes(needle) || t.description.toLowerCase().includes(needle));
+  toolsVisible = visible;
+
+  const byCategory = new Map();
+  for (const tool of visible) {
+    const category = categoryOf(tool.name);
+    if (!byCategory.has(category)) byCategory.set(category, []);
+    byCategory.get(category).push(tool);
+  }
+  const order = [...TOOL_CATEGORIES.map(([category]) => category), "Otras"];
+  const groups = order.filter((category) => byCategory.has(category)).map((category) => toolGroup(category, byCategory.get(category), Boolean(needle)));
   toolsList.replaceChildren(
-    ...settings.tools.map((tool) => {
-      const details = document.createElement("details");
-      details.className = "tool";
-      details.open = openTools.has(tool.name);
-      details.addEventListener("toggle", () => (details.open ? openTools.add(tool.name) : openTools.delete(tool.name)));
-
-      const summary = document.createElement("summary");
-      const box = document.createElement("input");
-      box.type = "checkbox";
-      box.checked = tool.enabled;
-      box.setAttribute("aria-label", `Permitir ${tool.name}`);
-      // Marcar la casilla no debe desplegar ni plegar la descripción.
-      box.addEventListener("click", (event) => event.stopPropagation());
-      box.addEventListener("change", () => changeSetting(toolsMessage, "set_tool_enabled", { name: tool.name, enabled: box.checked }));
-      const name = document.createElement("span");
-      name.className = "name";
-      name.textContent = tool.name;
-      summary.append(box, name);
-
-      const desc = document.createElement("p");
-      desc.className = "desc";
-      desc.textContent = tool.description;
-      details.append(summary, desc);
-      return details;
-    }),
+    ...(groups.length ? groups : [Object.assign(document.createElement("p"), { className: "hint", textContent: "Ninguna herramienta coincide." })]),
   );
 }
+
+toolsSearch.addEventListener("input", () => renderTools());
+toolsAllOn.addEventListener("click", () => changeSetting(toolsMessage, "set_tools_enabled", { names: toolsVisible.map((t) => t.name), enabled: true }));
+toolsAllOff.addEventListener("click", () => changeSetting(toolsMessage, "set_tools_enabled", { names: toolsVisible.map((t) => t.name), enabled: false }));
 
 // --- Nombre del asistente ---
 const nameForm = document.getElementById("name-form");
@@ -1077,6 +1209,40 @@ volumeInput.addEventListener("change", () => changeSetting(soundMessage, "set_so
 testSoundButton.addEventListener("click", () => invoke("test_sound", { volume: Number(volumeInput.value) }));
 confirmAllBox.addEventListener("change", () => changeSetting(toolsMessage, "set_confirm_all", { value: confirmAllBox.checked }));
 autostartBox.addEventListener("change", () => changeSetting(autostartMessage, "set_autostart", { enabled: autostartBox.checked }));
+
+// Atajo de la barra rápida: mismo formulario que el del chat.
+const quickForm = document.getElementById("quick-form");
+const quickKey = document.getElementById("quick-key");
+const quickMessage = document.getElementById("quick-message");
+const quickHint = document.getElementById("quick-hint");
+const saveQuick = document.getElementById("save-quick");
+const quickMods = [...document.querySelectorAll("[data-qmod]")];
+
+function renderQuickShortcut() {
+  const parts = settings.quick_shortcut.split("+");
+  quickKey.value = parts[parts.length - 1];
+  quickMods.forEach((box) => (box.checked = parts.slice(0, -1).includes(box.dataset.qmod)));
+  const label = (text) => text.replace("Super", "Win");
+  quickHint.textContent = settings.quick_shortcut_active
+    ? `Ahora: ${label(settings.quick_shortcut_active)}.`
+    : `${label(settings.quick_shortcut)} no está disponible (otro programa lo usa): elige otro.`;
+}
+
+quickForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const mods = quickMods.filter((box) => box.checked).map((box) => box.dataset.qmod);
+  const shortcut = [...mods, quickKey.value.trim().toUpperCase()].join("+");
+  saveQuick.disabled = true;
+  try {
+    await invoke("set_quick_shortcut", { shortcut });
+    setMessage(quickMessage, "Atajo guardado.", "ok");
+  } catch (error) {
+    setMessage(quickMessage, String(error), "error");
+  } finally {
+    saveQuick.disabled = false;
+    await loadSettings();
+  }
+});
 
 shortcutForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1379,9 +1545,10 @@ function hidePalette() {
 
 // Cierra lo que esté abierto encima del chat; devuelve si había algo.
 function closeOverlays() {
-  const open = !palette.hidden || !modelMenu.hidden;
+  const open = !palette.hidden || !modelMenu.hidden || !lookPanel.hidden;
   hidePalette();
   closeModelMenu();
+  closeLook();
   return open;
 }
 
@@ -1443,6 +1610,174 @@ input.addEventListener("keydown", (e) => {
   }
 });
 input.addEventListener("blur", () => setTimeout(hidePalette, 120));
+
+// --- Imágenes adjuntas: pegar capturas y mirar una ventana ---
+const attachmentsEl = document.getElementById("attachments");
+const lookBtn = document.getElementById("look-btn");
+const lookPanel = document.getElementById("look-panel");
+const lookStatus = document.getElementById("look-status");
+const lookThumb = document.getElementById("look-thumb");
+const lookCaption = document.getElementById("look-caption");
+const lookSelect = document.getElementById("look-select");
+const lookAttach = document.getElementById("look-attach");
+const MAX_ATTACHMENTS = 3;
+const MAX_IMAGE_SIDE = 1280;
+let pendingImages = []; // [{ mime, data (base64), label }]
+let lookCapture = null;
+let attachNoteTimer = null;
+
+// Aviso breve junto a las imágenes (por ejemplo, cuando el modelo no las admite).
+function attachNote(text) {
+  let note = attachmentsEl.querySelector(".attach-note");
+  if (!note) {
+    note = document.createElement("div");
+    note.className = "attach-note";
+    attachmentsEl.append(note);
+  }
+  note.textContent = text;
+  attachmentsEl.hidden = false;
+  clearTimeout(attachNoteTimer);
+  attachNoteTimer = setTimeout(() => {
+    note.remove();
+    attachmentsEl.hidden = pendingImages.length === 0;
+  }, 6000);
+}
+
+// Hasta que se cargan los ajustes se da por buena: el servidor rechaza lo que el modelo no pueda ver.
+function canSeeImages() {
+  const provider = settings && currentProvider();
+  return !provider || provider.vision !== false;
+}
+
+function renderAttachments() {
+  const note = attachmentsEl.querySelector(".attach-note");
+  const chips = pendingImages.map((image, index) => {
+    const chip = document.createElement("div");
+    chip.className = "attach-chip";
+    const thumb = document.createElement("img");
+    thumb.src = `data:${image.mime};base64,${image.data}`;
+    thumb.alt = image.label || "Imagen adjunta";
+    thumb.title = image.label || "Imagen adjunta";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "attach-x";
+    remove.textContent = "✕";
+    remove.title = remove.ariaLabel = "Quitar esta imagen";
+    remove.addEventListener("click", () => {
+      pendingImages.splice(index, 1);
+      renderAttachments();
+      input.focus();
+    });
+    chip.append(thumb, remove);
+    return chip;
+  });
+  attachmentsEl.replaceChildren(...chips, ...(note ? [note] : []));
+  attachmentsEl.hidden = !chips.length && !note;
+}
+
+function addPendingImage(image) {
+  if (!canSeeImages()) {
+    attachNote("Este proveedor todavía no puede ver imágenes. Cambia a Ollama con un modelo con visión (por ejemplo qwen3.5:9b).");
+    return false;
+  }
+  if (pendingImages.length >= MAX_ATTACHMENTS) {
+    attachNote(`Solo puedes adjuntar hasta ${MAX_ATTACHMENTS} imágenes por mensaje.`);
+    return false;
+  }
+  pendingImages.push(image);
+  renderAttachments();
+  return true;
+}
+
+// Reduce la imagen (lo que se envía no necesita más de 1280 px) y la convierte a PNG; si pesa mucho, a JPEG.
+async function normalizeImage(blob) {
+  const bitmap = await createImageBitmap(blob);
+  const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close?.();
+  let url = canvas.toDataURL("image/png");
+  let mime = "image/png";
+  if (url.length > 2_000_000) {
+    url = canvas.toDataURL("image/jpeg", 0.85);
+    mime = "image/jpeg";
+  }
+  return { mime, data: url.slice(url.indexOf(",") + 1) };
+}
+
+// Ctrl+V con una imagen en el portapapeles (una captura de pantalla, por ejemplo) la adjunta al mensaje.
+input.addEventListener("paste", async (e) => {
+  const images = [...(e.clipboardData?.items ?? [])].filter((item) => item.kind === "file" && item.type.startsWith("image/"));
+  if (!images.length) return; // texto normal: se pega como siempre
+  e.preventDefault();
+  for (const item of images) {
+    try {
+      const normalized = await normalizeImage(item.getAsFile());
+      if (!addPendingImage({ ...normalized, label: "Captura pegada" })) break;
+    } catch {
+      attachNote("No pude leer esa imagen.");
+    }
+  }
+});
+
+// «Mirar una ventana»: se captura la ventana en la que estabas, se te enseña y solo se adjunta si lo aceptas.
+function closeLook() {
+  lookPanel.hidden = true;
+  lookCapture = null;
+}
+
+async function captureLook(title) {
+  lookCapture = null;
+  lookAttach.disabled = true;
+  lookThumb.hidden = true;
+  lookCaption.textContent = "";
+  lookStatus.hidden = false;
+  lookStatus.textContent = "Capturando…";
+  try {
+    const capture = await invoke("capture_window_preview", { title: title || null });
+    lookCapture = capture;
+    lookThumb.src = `data:${capture.mime};base64,${capture.data}`;
+    lookThumb.hidden = false;
+    lookCaption.textContent = `«${capture.title}» (${capture.process}) · ${capture.width}×${capture.height}`;
+    lookStatus.hidden = true;
+    lookAttach.disabled = false;
+  } catch (error) {
+    lookStatus.textContent = String(error);
+  }
+}
+
+async function openLook() {
+  if (!canSeeImages()) {
+    attachNote("Este proveedor todavía no puede ver imágenes. Cambia a Ollama con un modelo con visión (por ejemplo qwen3.5:9b).");
+    return;
+  }
+  hidePalette();
+  closeModelMenu();
+  lookPanel.hidden = false;
+  lookSelect.replaceChildren(new Option("La ventana en la que estabas", ""));
+  try {
+    const windows = await invoke("list_capturable_windows");
+    for (const w of windows) lookSelect.append(new Option(`${w.title} — ${w.process}`, w.title));
+  } catch {
+    // sin la lista se puede seguir con la ventana automática
+  }
+  captureLook("");
+}
+
+lookBtn.addEventListener("click", () => (lookPanel.hidden ? openLook() : closeLook()));
+document.getElementById("look-close").addEventListener("click", closeLook);
+document.getElementById("look-cancel").addEventListener("click", closeLook);
+lookSelect.addEventListener("change", () => captureLook(lookSelect.value));
+lookAttach.addEventListener("click", () => {
+  if (!lookCapture) return;
+  const { mime, data, title } = lookCapture;
+  if (addPendingImage({ mime, data, label: title })) {
+    closeLook();
+    input.focus();
+  }
+});
 
 // --- Fechas legibles de cosas que ya pasaron ---
 const capital = (text) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
@@ -1624,14 +1959,101 @@ function askRyan(text, send) {
   invoke("submit_message", { text });
 }
 
-for (const [icon, text, send] of SHORTCUTS) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "idea";
-  button.textContent = `${icon} ${text.trim()}${send ? "" : "…"}`;
-  button.addEventListener("click", () => askRyan(text, send));
-  todayShortcuts.append(button);
+// Cada modo propone lo que más encaja con él.
+const PROFILE_SHORTCUTS = {
+  work: [
+    ["📂", "¿Qué ocupa más espacio en mis Descargas?", true],
+    ["🔁", "Busca archivos duplicados en el escritorio", true],
+    ["🗂️", "Organiza mi carpeta de Descargas", true],
+    ["🪟", "Mira esta ventana y dime qué ves", true],
+    ["⏰", "Recuérdame ", false],
+    ["🆕", "/new", true],
+  ],
+  rest: [
+    ["🎵", "Pon música tranquila", true],
+    ["😄", "Cuéntame un chiste", true],
+    ["⏰", "Recuérdame descansar en 15 minutos", true],
+    ["🔎", "Busca algo interesante para hoy", true],
+    ["🎲", "Propón algo divertido que hacer", true],
+    ["🆕", "/new", true],
+  ],
+  focus: [
+    ["⏰", "Recuérdame ", false],
+    ["🪟", "Mira esta ventana y dime qué ves", true],
+    ["🆕", "/new", true],
+  ],
+};
+
+function renderShortcuts() {
+  const list = PROFILE_SHORTCUTS[settings?.profile] ?? SHORTCUTS;
+  todayShortcuts.replaceChildren(
+    ...list.map(([icon, text, send]) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "idea";
+      button.textContent = `${icon} ${text.trim()}${send ? "" : "…"}`;
+      button.addEventListener("click", () => askRyan(text, send));
+      return button;
+    }),
+  );
 }
+renderShortcuts();
+
+// --- Modos (perfiles) ---
+const profileChips = document.getElementById("profile-chips");
+const profileDesc = document.getElementById("profile-desc");
+const profileChanges = document.getElementById("profile-changes");
+const profileSelect = document.getElementById("profile-select");
+const profileSelectDesc = document.getElementById("profile-select-desc");
+const profileBadge = document.getElementById("profile-badge");
+
+function renderProfile() {
+  if (!settings?.profiles) return;
+  const active = settings.profiles.find((p) => p.id === settings.profile) ?? settings.profiles[0];
+  profileChips.replaceChildren(
+    ...settings.profiles.map((p) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "profile-chip";
+      chip.setAttribute("role", "radio");
+      chip.setAttribute("aria-checked", String(p.id === active.id));
+      chip.textContent = `${p.icon} ${p.name}`;
+      chip.title = p.description;
+      chip.addEventListener("click", () => chooseProfile(p.id));
+      return chip;
+    }),
+  );
+  profileDesc.textContent = active.description;
+  profileChanges.replaceChildren(
+    ...active.changes.map((text) => {
+      const item = document.createElement("li");
+      item.textContent = text;
+      return item;
+    }),
+  );
+  if (profileSelect.options.length !== settings.profiles.length) {
+    profileSelect.replaceChildren(...settings.profiles.map((p) => new Option(`${p.icon} ${p.name}`, p.id)));
+  }
+  profileSelect.value = active.id;
+  profileSelectDesc.textContent = active.description;
+  // Solo se destaca en la cabecera cuando no es el modo Normal.
+  profileBadge.hidden = active.id === "normal";
+  profileBadge.textContent = `${active.icon} ${active.name}`;
+  renderShortcuts();
+}
+
+async function chooseProfile(id) {
+  if (!settings || id === settings.profile) return;
+  try {
+    await invoke("set_profile", { id });
+    await loadSettings();
+  } catch (error) {
+    addMessage("assistant", `No pude cambiar de modo: ${error}`);
+  }
+}
+profileSelect.addEventListener("change", () => chooseProfile(profileSelect.value));
+profileBadge.addEventListener("click", () => showTab("today"));
+window.__TAURI__.event.listen("profile-changed", () => loadSettings().catch(() => {}));
 
 async function refreshToday() {
   await Promise.allSettled([loadReminders(), refreshStatus(), refreshMedia(), refreshLastConversation()]);
@@ -1841,5 +2263,13 @@ historySave.addEventListener("change", async () => {
   loadHistory();
 });
 
-loadSettings().catch(() => {});
+// Al arrancar, la página puede cargar antes de que la aplicación termine de prepararse: se reintenta unos segundos.
+async function loadSettingsWhenReady(attempt = 0) {
+  try {
+    await loadSettings();
+  } catch {
+    if (attempt < 30) setTimeout(() => loadSettingsWhenReady(attempt + 1), 400);
+  }
+}
+loadSettingsWhenReady();
 loadHeaderAvatar();

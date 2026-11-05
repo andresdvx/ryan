@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Ryan - Barra rápida</title>
+  <link rel="stylesheet" href="quick.css">
+</head>
+<body>
+  <main id="bar" class="bar">
+    <div class="line">
+      <span class="logo" aria-hidden="true">✦</span>
+      <input id="q-input" type="text" placeholder="Pídele algo a Ryan…" autocomplete="off" spellcheck="false" autofocus aria-label="Pídele algo al asistente">
+      <span id="q-state" class="state" role="status"></span>
+      <button id="q-close" class="close" type="button" title="Cerrar (Esc)" aria-label="Cerrar">&times;</button>
+    </div>
+    <section id="q-answer" class="answer" aria-live="polite" hidden></section>
+    <footer id="q-foot" class="foot" hidden>
+      <button id="q-open" class="open" type="button">Abrir en el chat ↗</button>
+      <span class="hint">Escribe otra cosa para seguir · Esc para cerrar</span>
+    </footer>
+  </main>
+  <script src="richtext.js"></script>
+  <script src="quick.js"></script>
+</body>
+</html>

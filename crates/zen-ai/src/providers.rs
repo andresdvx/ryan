@@ -15,6 +15,11 @@ pub enum ProviderKind {
 impl ProviderKind {
     pub const ALL: [ProviderKind; 4] = [ProviderKind::Gemini, ProviderKind::Claude, ProviderKind::OpenAi, ProviderKind::Ollama];
 
+    /// ¿Puede este proveedor recibir imágenes? De momento solo Ollama (con un modelo con visión).
+    pub fn supports_images(self) -> bool {
+        self == ProviderKind::Ollama
+    }
+
     /// Los servicios en la nube exigen una API key; Ollama corre en el propio equipo.
     pub fn needs_key(self) -> bool {
         self != ProviderKind::Ollama
