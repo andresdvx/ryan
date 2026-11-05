@@ -673,7 +673,7 @@ fn list_activity(app: AppHandle) -> Vec<Value> {
 
 /// Las únicas herramientas con las que se puede deshacer algo. El registro vive en un archivo: aunque alguien lo
 /// editara, deshacer nunca podría llamar a una herramienta distinta de estas (y todas piden confirmación como siempre).
-const UNDO_TOOLS: [&str; 5] = ["move_file", "delete_file", "undo_organize", "cancel_reminder", "forget"];
+const UNDO_TOOLS: [&str; 7] = ["move_file", "delete_file", "undo_organize", "cancel_reminder", "forget", "delete_task", "complete_task"];
 
 /// Deshace una acción del registro llamando a la herramienta contraria por el camino de seguridad normal: la
 /// confirmación aparece en el chat. El resultado llega como un mensaje más y la entrada se marca como deshecha.
@@ -748,6 +748,39 @@ fn add_reminder(reminders: tauri::State<Arc<zen_desktop::Reminders>>, text: Stri
 #[tauri::command]
 fn cancel_reminder(reminders: tauri::State<Arc<zen_desktop::Reminders>>, id: u64) -> bool {
     reminders.cancel(id).is_some()
+}
+
+fn tasks_store(app: &AppHandle) -> Result<Arc<zen_desktop::Tasks>, String> {
+    app.try_state::<Arc<zen_desktop::Tasks>>().map(|tasks| tasks.inner().clone()).ok_or_else(|| "Las tareas aún no están listas; inténtalo de nuevo.".to_string())
+}
+
+/// Lista de tareas para la pestaña Pendientes, en el orden en que se agregaron.
+#[tauri::command]
+fn list_tasks(app: AppHandle) -> Value {
+    let items = app.try_state::<Arc<zen_desktop::Tasks>>().map(|tasks| tasks.list()).unwrap_or_default();
+    let items: Vec<Value> = items.iter().map(|t| json!({ "id": t.id, "text": t.text, "done": t.done })).collect();
+    json!({ "items": items })
+}
+
+#[tauri::command]
+fn add_task(app: AppHandle, text: String) -> Result<(), String> {
+    tasks_store(&app)?.add(&text).map(|_| ())
+}
+
+#[tauri::command]
+fn set_task_done(app: AppHandle, id: u64, done: bool) -> Result<(), String> {
+    tasks_store(&app)?.set_done(id, done).map(|_| ()).ok_or_else(|| "Esa tarea ya no existe.".to_string())
+}
+
+#[tauri::command]
+fn delete_task(app: AppHandle, id: u64) -> Result<(), String> {
+    tasks_store(&app)?.remove(id).map(|_| ()).ok_or_else(|| "Esa tarea ya no existe.".to_string())
+}
+
+/// Quita de la lista todas las tareas ya hechas; devuelve cuántas.
+#[tauri::command]
+fn clear_done_tasks(app: AppHandle) -> Result<usize, String> {
+    Ok(tasks_store(&app)?.clear_done())
 }
 
 fn provider_kind(id: &str) -> Result<ProviderKind, String> {
@@ -1294,6 +1327,11 @@ fn main() {
             list_reminders,
             add_reminder,
             cancel_reminder,
+            list_tasks,
+            add_task,
+            set_task_done,
+            delete_task,
+            clear_done_tasks,
             resolve_confirmation,
             get_settings,
             set_provider,
@@ -1357,10 +1395,12 @@ fn main() {
             app.manage(Arc::new(zen_desktop::conversations::Conversations::open(data_dir.clone())));
             let memory = Arc::new(zen_desktop::Memory::open(data_dir.clone()));
             memory.set_enabled(settings.memory_enabled);
+            let tasks = Arc::new(zen_desktop::Tasks::open(data_dir.clone()));
             let locations = Arc::new(locations);
             app.manage(locations.clone());
             app.manage(Arc::new(zen_desktop::activity::Activity::open(data_dir.clone())));
-            zen_desktop::register_default_tools(&mut registry, locations, data_dir, reminders.clone(), apps.clone(), memory.clone());
+            zen_desktop::register_default_tools(&mut registry, locations, data_dir, reminders.clone(), apps.clone(), memory.clone(), tasks.clone());
+            app.manage(tasks);
             app.manage(memory);
             // Se lee el menú Inicio una vez al arrancar: así, cuando el usuario abre Ajustes, la lista ya está.
             #[cfg(debug_assertions)]

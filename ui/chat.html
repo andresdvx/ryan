@@ -23,11 +23,14 @@
   </header>
   <div id="model-menu" class="model-menu" role="menu" aria-label="Modelo de IA" hidden></div>
   <nav class="tabs" role="tablist">
-    <button class="tab active" role="tab" data-tab="chat" aria-selected="true" title="Charla">💬 <span class="tab-label">Charla</span></button>
+    <button class="tab active" role="tab" data-tab="chat" aria-selected="true" title="Chat">💬 <span class="tab-label">Chat</span></button>
     <button class="tab" role="tab" data-tab="today" aria-selected="false" title="Hoy">🏠 <span class="tab-label">Hoy</span></button>
-    <button class="tab" role="tab" data-tab="reminders" aria-selected="false" title="Recordatorios">⏰ <span class="tab-label">Recordatorios</span> <span id="reminder-badge" class="count" hidden></span></button>
-    <button class="tab" role="tab" data-tab="history" aria-selected="false" title="Historial">🕘 <span class="tab-label">Historial</span></button>
-    <button class="tab" role="tab" data-tab="activity" aria-selected="false" title="Actividad">🧾 <span class="tab-label">Actividad</span></button></nav>
+    <button class="tab" role="tab" data-tab="reminders" aria-selected="false" title="Tareas y recordatorios">✅ <span class="tab-label">Pendientes</span> <span id="reminder-badge" class="count" hidden></span></button>
+    <button class="tab" role="tab" data-tab="log" aria-selected="false" title="Conversaciones y acciones de Ryan">🕘 <span class="tab-label">Registro</span></button></nav>
+  <div id="log-switch" class="subtabs" role="tablist" aria-label="Qué registro ver" hidden>
+    <button type="button" class="subtab active" role="tab" data-part="history" aria-selected="true">💬 Conversaciones</button>
+    <button type="button" class="subtab" role="tab" data-part="activity" aria-selected="false">🧾 Lo que hizo Ryan</button>
+  </div>
 
   <div id="view-chat" class="view">
     <main id="history"></main>
@@ -136,11 +139,16 @@
       <div class="panel">
         <div class="card field">
           <h3>Lo que ha hecho Ryan <span id="activity-count" class="count"></span></h3>
-          <p class="hint">Cada acción con su detalle. Se guarda solo en este equipo y sin contenido privado (lo que escribes en otras apps o lees de un archivo no se guarda). Donde se puede, tienes un botón para deshacerla.</p>
+          <p class="hint">Cada acción con su detalle. Se guarda solo en este equipo y sin contenido privado (lo que escribes en otras apps o lees de un archivo no se guarda).</p>
+          <div class="undo-note" role="note">
+            <strong>↩ Deshacer</strong>
+            <span>Las acciones marcadas con «Se puede deshacer» traen su botón debajo. Al pulsarlo, Ryan te pide confirmación en el chat antes de revertir nada. Se pueden deshacer: mover archivos, crear, copiar, comprimir o descomprimir (lo creado va a la Papelera), organizar una carpeta, y crear recordatorios, recuerdos o tareas. Lo borrado ya está en la Papelera de Windows: ahí lo recuperas tú. Lo demás (abrir apps, reproducir música, escribir en otras ventanas…) no se puede revertir.</span>
+            <span id="undo-summary" class="undo-summary"></span>
+          </div>
           <input id="activity-search" type="search" placeholder="Buscar en la actividad…" spellcheck="false" autocomplete="off" aria-label="Buscar en la actividad">
           <div id="activity-filters" class="profile-chips" role="radiogroup" aria-label="Filtro">
             <button type="button" class="profile-chip" role="radio" data-filter="all" aria-checked="true">Todo</button>
-            <button type="button" class="profile-chip" role="radio" data-filter="undo" aria-checked="false">Se puede deshacer</button>
+            <button type="button" class="profile-chip" role="radio" data-filter="undo" aria-checked="false">↩ Se puede deshacer</button>
             <button type="button" class="profile-chip" role="radio" data-filter="failed" aria-checked="false">Con problemas</button>
           </div>
           <div class="row"><button type="button" id="activity-clear" class="secondary">Borrar el registro</button></div>
@@ -186,6 +194,23 @@
   <section id="view-reminders" class="view" hidden>
     <div class="panels">
       <div class="panel">
+        <h2 class="section-title">✅ Tareas</h2>
+        <form id="task-form" class="card field" autocomplete="off">
+          <h3>Nueva tarea</h3>
+          <div class="row">
+            <input id="task-text" type="text" maxlength="200" spellcheck="true" placeholder="Por ejemplo: R38838 - ESE" aria-label="Nueva tarea">
+            <button type="submit" id="task-add">Añadir</button>
+          </div>
+          <div id="task-message" class="message" role="status"></div>
+        </form>
+
+        <div class="card field">
+          <h3>Tu lista <span id="task-count" class="count"></span> <button type="button" id="task-clear" class="link-btn" hidden>Quitar las hechas</button></h3>
+          <div id="task-list" class="tasks"></div>
+          <p id="task-empty" class="hint empty">No hay tareas. Añade una arriba o díselo al asistente en el chat: «agrega R38838 - ESE a mi lista de tareas».</p>
+        </div>
+
+        <h2 class="section-title">⏰ Recordatorios</h2>
         <form id="reminder-form" class="card field" autocomplete="off">
           <h3>Nuevo recordatorio</h3>
           <input id="reminder-text" type="text" maxlength="200" spellcheck="true" placeholder="¿Qué quieres que te recuerde?" aria-label="Qué recordar">

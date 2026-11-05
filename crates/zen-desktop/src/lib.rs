@@ -28,6 +28,7 @@ mod uia;
 mod powershell;
 mod read_tools;
 mod reminders;
+mod tasks;
 mod screen;
 mod screen_tools;
 pub mod sound;
@@ -51,6 +52,7 @@ pub use file_tools::reveal_in_explorer;
 pub use locations::{Location, Locations, Placed};
 pub use memory::Memory;
 pub use reminders::{Reminders, MAX_PENDING as MAX_REMINDERS};
+pub use tasks::Tasks;
 pub use screen_tools::{capturable_windows, capture_for_user, UserCapture};
 pub use system_tools::system_status;
 pub use web_tools::open_url;
@@ -65,6 +67,7 @@ pub fn register_default_tools(
     reminders: Arc<Reminders>,
     apps: Arc<AppCatalog>,
     memory: Arc<Memory>,
+    tasks: Arc<Tasks>,
 ) {
     let journal = organize::Journal::new(data_dir);
     registry.register(fs_tools::CreateFolder::new(locations.clone()));
@@ -104,4 +107,8 @@ pub fn register_default_tools(
     registry.register(reminders::CancelReminder::new(reminders));
     registry.register(memory::Remember(memory.clone()));
     registry.register(memory::Forget(memory));
+    registry.register(tasks::AddTask(tasks.clone()));
+    registry.register(tasks::ListTasks(tasks.clone()));
+    registry.register(tasks::CompleteTask(tasks.clone()));
+    registry.register(tasks::DeleteTask(tasks));
 }

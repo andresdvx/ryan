@@ -511,6 +511,7 @@ const views = {
   today: document.getElementById("view-today"),
   history: document.getElementById("view-history"),
   activity: document.getElementById("view-activity"),
+  // «log» no es una vista: es la pestaña Registro, que muestra la parte elegida (conversaciones o acciones de Ryan).
   chat: document.getElementById("view-chat"),
   reminders: document.getElementById("view-reminders"),
   settings: document.getElementById("view-settings"),
@@ -521,13 +522,27 @@ const settingsBtn = document.getElementById("settings-btn");
 let currentTab = "chat";
 let tabBeforeSettings = "chat";
 
+// La pestaña Registro junta Conversaciones y Lo que hizo Ryan; se recuerda cuál se estaba viendo.
+const logSwitch = document.getElementById("log-switch");
+let logPart = "history";
+
 function showTab(name) {
+  if (name === "log") name = logPart;
+  if (name === "history" || name === "activity") logPart = name;
+  const inLog = name === "history" || name === "activity";
+  const tabKey = inLog ? "log" : name;
+  logSwitch.hidden = !inLog;
+  for (const part of logSwitch.children) {
+    const active = part.dataset.part === name;
+    part.classList.toggle("active", active);
+    part.setAttribute("aria-selected", String(active));
+  }
   if (name === "settings" && currentTab !== "settings") tabBeforeSettings = currentTab;
   currentTab = name;
   settingsBtn.classList.toggle("active", name === "settings");
   settingsBtn.setAttribute("aria-pressed", String(name === "settings"));
   tabs.forEach((tab) => {
-    const active = tab.dataset.tab === name;
+    const active = tab.dataset.tab === tabKey;
     tab.classList.toggle("active", active);
     tab.setAttribute("aria-selected", String(active));
   });
@@ -542,6 +557,10 @@ function showTab(name) {
   else if (name === "chat") input.focus();
 }
 tabs.forEach((tab) => tab.addEventListener("click", () => showTab(tab.dataset.tab)));
+logSwitch.addEventListener("click", (e) => {
+  const part = e.target.closest("[data-part]");
+  if (part) showTab(part.dataset.part);
+});
 // El engranaje abre Ajustes; si ya están abiertos, vuelve a lo que se estaba viendo.
 settingsBtn.addEventListener("click", () => showTab(currentTab === "settings" ? tabBeforeSettings : "settings"));
 
@@ -641,8 +660,7 @@ function renderReminders() {
   const count = reminders.length;
   reminderEmpty.hidden = count > 0;
   reminderCount.textContent = count ? `${count}/${reminderMax}` : "";
-  reminderBadge.textContent = String(count);
-  reminderBadge.hidden = count === 0;
+  updateBadge();
   refreshCountdowns();
   renderTodayReminders();
 }
@@ -665,7 +683,10 @@ function openReminders() {
   reminderTick = setInterval(() => {
     refreshCountdowns();
     // Cada pocos segundos se vuelve a leer: así aparecen los que crea la IA y desaparecen los que ya sonaron.
-    if (++ticks % 5 === 0) loadReminders();
+    if (++ticks % 5 === 0) {
+      loadReminders();
+      loadTasks();
+    }
   }, 1000);
 }
 
@@ -718,9 +739,119 @@ reminderForm.addEventListener("submit", async (e) => {
 // Cuando suena uno, o cuando la IA termina una tarea (quizá creó uno), se actualiza la lista y el contador.
 window.__TAURI__.event.listen("reminder", loadReminders);
 window.__TAURI__.event.listen("character-state", (e) => {
-  if (e.payload === "success") loadReminders();
+  if (e.payload === "success") {
+    loadReminders();
+    loadTasks();
+  }
 });
 loadReminders();
+
+// --- Tareas (comparten pestaña con los recordatorios: «Pendientes») ---
+const taskForm = document.getElementById("task-form");
+const taskText = document.getElementById("task-text");
+const taskAdd = document.getElementById("task-add");
+const taskMessage = document.getElementById("task-message");
+const taskList = document.getElementById("task-list");
+const taskEmpty = document.getElementById("task-empty");
+const taskCount = document.getElementById("task-count");
+const taskClear = document.getElementById("task-clear");
+let tasks = [];
+
+// El número de la pestaña suma lo que queda por hacer: recordatorios programados y tareas sin tachar.
+function updateBadge() {
+  const total = reminders.length + tasks.filter((task) => !task.done).length;
+  reminderBadge.textContent = String(total);
+  reminderBadge.hidden = total === 0;
+}
+
+function taskRow(item) {
+  const row = document.createElement("div");
+  row.className = item.done ? "task done" : "task";
+
+  const check = document.createElement("input");
+  check.type = "checkbox";
+  check.checked = item.done;
+  check.ariaLabel = item.done ? "Volver a abrir esta tarea" : "Marcar como hecha";
+  check.addEventListener("change", async () => {
+    check.disabled = true;
+    try {
+      await invoke("set_task_done", { id: item.id, done: check.checked });
+    } catch (error) {
+      setMessage(taskMessage, String(error), "error");
+    }
+    await loadTasks();
+  });
+
+  const text = document.createElement("div");
+  text.className = "text";
+  text.textContent = item.text;
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "cancel";
+  remove.textContent = "✕";
+  remove.title = remove.ariaLabel = "Borrar esta tarea";
+  remove.addEventListener("click", async () => {
+    remove.disabled = true;
+    try {
+      await invoke("delete_task", { id: item.id });
+    } catch (error) {
+      setMessage(taskMessage, String(error), "error");
+    }
+    await loadTasks();
+  });
+
+  row.append(check, text, remove);
+  return row;
+}
+
+function renderTasks() {
+  // Primero lo pendiente, luego lo hecho; dentro de cada grupo, en el orden en que se agregaron.
+  const ordered = [...tasks.filter((t) => !t.done), ...tasks.filter((t) => t.done)];
+  taskList.replaceChildren(...ordered.map(taskRow));
+  const pending = tasks.filter((t) => !t.done).length;
+  taskEmpty.hidden = tasks.length > 0;
+  taskCount.textContent = tasks.length ? `${pending} pendiente${pending === 1 ? "" : "s"}` : "";
+  taskClear.hidden = !tasks.some((t) => t.done);
+  updateBadge();
+}
+
+async function loadTasks() {
+  try {
+    tasks = (await invoke("list_tasks")).items;
+    renderTasks();
+  } catch {
+    // sin la lista no hay nada que pintar; se reintenta en el siguiente ciclo
+  }
+}
+
+taskForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = taskText.value.trim();
+  if (!text) return setMessage(taskMessage, "Escribe la tarea.", "error");
+  taskAdd.disabled = true;
+  try {
+    await invoke("add_task", { text });
+    taskText.value = "";
+    setMessage(taskMessage, "Tarea añadida.", "ok");
+  } catch (error) {
+    setMessage(taskMessage, String(error), "error");
+  } finally {
+    taskAdd.disabled = false;
+    await loadTasks();
+    taskText.focus();
+  }
+});
+
+taskClear.addEventListener("click", async () => {
+  try {
+    await invoke("clear_done_tasks");
+  } catch (error) {
+    setMessage(taskMessage, String(error), "error");
+  }
+  await loadTasks();
+});
+loadTasks();
 
 // Secciones de Ajustes: una a la vez, para no tener que recorrer una lista larguísima.
 const subtabs = [...document.querySelectorAll(".subtab")];
@@ -1033,6 +1164,7 @@ const TOOL_CATEGORIES = [
   ["Internet y aplicaciones", ["web_search", "open_website", "open_application"]],
   ["Sistema", ["system_info", "set_brightness", "read_clipboard", "write_clipboard"]],
   ["Recordatorios y memoria", ["set_reminder", "list_reminders", "cancel_reminder", "remember", "forget"]],
+  ["Tareas", ["add_task", "list_tasks", "complete_task", "delete_task"]],
   ["Pantalla y otras ventanas", ["look_at_screen", "list_windows", "list_controls", "type_text", "press_keys", "click_control"]],
 ];
 // Estas solo funcionan si además está activado «Control de otras aplicaciones».
@@ -2170,7 +2302,7 @@ async function loadHistory() {
       historyEmpty.textContent = query
         ? `Ninguna conversación menciona «${query}».`
         : historySave.checked
-          ? "Todavía no hay conversaciones guardadas. Habla con tu asistente en la pestaña Charla y aparecerán aquí."
+          ? "Todavía no hay conversaciones guardadas. Habla con tu asistente en la pestaña Chat y aparecerán aquí."
           : "El historial está apagado: las conversaciones nuevas no se guardan.";
     }
   } catch (error) {
@@ -2293,6 +2425,7 @@ const TOOL_LABELS = {
   cancel_reminder: "Cancelar un recordatorio", remember: "Recordar algo", forget: "Olvidar algo", look_at_screen: "Mirar una ventana",
   list_windows: "Listar ventanas", list_controls: "Listar controles", type_text: "Escribir en otra aplicación",
   press_keys: "Pulsar teclas", click_control: "Pulsar un control",
+  add_task: "Agregar una tarea", list_tasks: "Listar tareas", complete_task: "Marcar una tarea", delete_task: "Borrar una tarea",
 };
 const toolLabel = (name) => TOOL_LABELS[name] ?? humanToolName(name);
 
@@ -2473,7 +2606,7 @@ function buildToolMessage(p) {
 }
 window.__TAURI__.event.listen("chat-tool", (e) => addToHistory(buildToolMessage(e.payload)));
 
-// --- Pestaña Actividad ---
+// --- Sección «Lo que hizo Ryan» del Registro ---
 const activityList = document.getElementById("activity-list");
 const activityEmpty = document.getElementById("activity-empty");
 const activitySearch = document.getElementById("activity-search");
@@ -2481,6 +2614,7 @@ const activityCount = document.getElementById("activity-count");
 const activityClear = document.getElementById("activity-clear");
 const activityMessage = document.getElementById("activity-message");
 const activityFilters = document.getElementById("activity-filters");
+const undoSummary = document.getElementById("undo-summary");
 let activityData = [];
 let activityFilter = "all";
 
@@ -2518,7 +2652,7 @@ function activityCard(entry) {
   } else if (entry.undo) {
     const badge = document.createElement("span");
     badge.className = "badge-undo";
-    badge.textContent = "Se puede deshacer";
+    badge.textContent = "↩ Se puede deshacer";
     side.append(badge);
   }
   head.append(icon, main, side);
@@ -2529,6 +2663,29 @@ function activityCard(entry) {
     head.setAttribute("aria-expanded", String(!detail.hidden));
   });
   card.append(head, detail);
+  // El botón de deshacer se ve siempre, sin tener que desplegar el detalle.
+  if (!entry.undone && entry.undo && entry.id) {
+    const bar = document.createElement("div");
+    bar.className = "act-undo";
+    const undo = document.createElement("button");
+    undo.type = "button";
+    undo.textContent = `↩ Deshacer: ${entry.undo}`;
+    const note = document.createElement("span");
+    note.className = "act-undo-note";
+    note.textContent = "Te pediré confirmación en el chat.";
+    undo.addEventListener("click", async () => {
+      undo.disabled = true;
+      try {
+        await invoke("undo_activity", { id: entry.id });
+        showTab("chat");
+      } catch (error) {
+        note.textContent = String(error);
+        undo.disabled = false;
+      }
+    });
+    bar.append(undo, note);
+    card.append(bar);
+  }
   return card;
 }
 
@@ -2540,6 +2697,10 @@ function renderActivity() {
     return !needle || toolLabel(entry.tool).toLowerCase().includes(needle) || entry.summary.toLowerCase().includes(needle);
   });
   activityCount.textContent = activityData.length ? String(activityData.length) : "";
+  const undoable = activityData.filter((entry) => entry.undo && !entry.undone).length;
+  undoSummary.textContent = undoable
+    ? `Ahora mismo puedes deshacer ${undoable} acción${undoable === 1 ? "" : "es"}.`
+    : "Ahora mismo no hay nada que deshacer.";
   activityList.replaceChildren(...shown.map(activityCard));
   activityEmpty.hidden = shown.length > 0;
   if (!shown.length) {
