@@ -9,6 +9,8 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #phones { position: absolute; display: block; opacity: 0; translate: -50% 0; pointer-events: none; transform-origin: 50% 0; }
 #pet[data-music="on"] #phones { animation: phones-on 0.8s cubic-bezier(0.3, 1.4, 0.5, 1) forwards; }
 #pet[data-music="off"] #phones { animation: phones-off 0.45s ease-in forwards; }
+/* Al caminar va de lado y los auriculares están dibujados de frente: se esconden mientras anda (en todos los personajes) y vuelven al parar. */
+#pet[data-state="walking"] #phones { visibility: hidden; }
 /* Disfrutando la música: cabecea despacio y suben notas. Solo en reposo (el resto de estados manda). */
 #pet[data-music="on"][data-state="idle"] #rig { animation: groove 1s ease-in-out 0.8s infinite; }
 #pet[data-music="on"]::before, #pet[data-music="on"] #rig::after {
