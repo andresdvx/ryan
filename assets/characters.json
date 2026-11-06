@@ -112,15 +112,17 @@
       "preview_frame": 1,
       "speed": 1.0,
       "states": {
-        "listening": { "sequence": [3, 1, 3, 8, 3, 12] },
-        "sleeping": { "sequence": [2, 6, 11, 8] },
-        "thinking": { "sequence": [1, 5, 12, 5, 1, 9] },
-        "working": { "sequence": [4, 9, 10, 9] },
-        "success": { "sequence": [3, 1, 3, 12] },
-        "happy": { "sequence": [3, 4, 3, 10] },
-        "surprised": { "sequence": [10, 4, 10, 1] },
-        "interacting": { "sequence": [3, 5, 3, 7] },
-        "alert": { "sequence": [10, 4, 10, 12] }
+        "listening": { "folder": "ellie/listening", "pattern": "listening_{nn}.png", "frames": 6, "ms": 250 },
+        "sleeping": { "folder": "ellie/sleeping", "pattern": "sleeping_{nn}.png", "frames": 4, "ms": 900 },
+        "thinking": { "folder": "ellie/thinking", "pattern": "thinking_{nn}.png", "frames": 6, "ms": 250 },
+        "working": { "folder": "ellie/working", "pattern": "working_{nn}.png", "frames": 4, "ms": 225 },
+        "success": { "folder": "ellie/success", "pattern": "success_{nn}.png", "frames": 6, "ms": 150 },
+        "happy": { "folder": "ellie/happy", "pattern": "happy_{nn}.png", "frames": 5, "ms": 220 },
+        "surprised": { "folder": "ellie/surprised", "pattern": "surprised_{nn}.png", "frames": 4, "ms": 150 },
+        "interacting": { "folder": "ellie/interacting", "pattern": "interacting_{nn}.png", "frames": 4, "ms": 250 },
+        "alert": { "folder": "ellie/alert", "pattern": "alert_{nn}.png", "frames": 4, "ms": 175 },
+        "walking": { "folder": "ellie/walking", "pattern": "walking_{nn}.png", "frames": 6, "ms": 150 },
+        "idle": { "folder": "ellie/idle", "pattern": "idle_{nn}.png", "frames": 4, "ms": 450 }
       }
     },
     {
