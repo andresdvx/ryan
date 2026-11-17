@@ -23,6 +23,21 @@
         "shadow": false
       },
       {
+        "label": "dropbar",
+        "title": "Ryan - Soltar",
+        "url": "dropbar.html",
+        "width": 340,
+        "height": 176,
+        "visible": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "transparent": true,
+        "shadow": false,
+        "focus": false
+      },
+      {
         "label": "chat",
         "title": "Ryan - Chat",
         "url": "chat.html",

@@ -1313,6 +1313,7 @@ fn main() {
             open_recycle_bin,
             hide_quick_cmd,
             resize_quick,
+            filedrop::dropbar_choose,
             filedrop::file_menu_state,
             filedrop::file_menu_close,
             filedrop::file_menu_resize,
@@ -1442,6 +1443,7 @@ fn main() {
             media::spawn(app.handle().clone());
             music::spawn(app.handle().clone());
             filedrop::attach(app.handle());
+            filedrop::spawn_watch(app.handle().clone());
             notify::spawn(app.handle().clone());
             power::spawn(app.handle().clone());
             usage::spawn(app.handle().clone());

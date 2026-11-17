@@ -24,6 +24,10 @@ pub enum Event {
     DownloadFinished { name: String },
     /// El usuario soltó un archivo sobre Ryan (el chat o el personaje).
     FileDropped { name: String },
+    /// El usuario empezó a arrastrar un archivo por el escritorio: Ryan se queda quieto y despliega su barra.
+    FileDragStarted,
+    /// Terminó ese arrastre (se soltó el archivo o se canceló).
+    FileDragEnded,
     /// Se conectó una unidad extraíble (memoria USB, lector de tarjetas): su letra.
     UsbConnected { drive: char },
     /// Empezó a sonar música (o un vídeo) en el equipo, en cualquier aplicación.

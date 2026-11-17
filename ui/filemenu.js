@@ -88,6 +88,8 @@ function chip(offer) {
 function render(data) {
   state = data;
   busy = false;
+  // Soltar sobre «Convertir» de la barra abre solo el formulario de conversiones; el resto va por el chat.
+  $("fm-ai-block").hidden = data.mode === "convert";
   const [first, ...rest] = data.files;
   const kinds = new Set(data.files.map((f) => f.type));
   $("fm-icon").textContent = data.files.length === 1 ? (ICONS[first.type] ?? "📄") : kinds.size === 1 ? (ICONS[first.type] ?? "📄") : "🗂️";

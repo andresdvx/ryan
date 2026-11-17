@@ -15,6 +15,7 @@ mod input_tools;
 mod locations;
 pub mod media_session;
 pub mod convert;
+pub mod drag;
 pub mod doc;
 pub mod incoming;
 pub mod office;
