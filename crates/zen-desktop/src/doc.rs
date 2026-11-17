@@ -3,6 +3,7 @@
 //! (texto, Markdown, HTML y PDF). Así cada formato nuevo solo necesita un lector o un escritor, no una pareja
 //! por cada combinación.
 
+use base64::Engine as _;
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +16,34 @@ pub enum Block {
     /// Texto que debe verse tal cual (código, JSON, registros).
     Pre(String),
     Table(Vec<Vec<String>>),
+    /// Una imagen incrustada (de un Word, por ejemplo).
+    Image(DocImage),
+}
+
+/// Una imagen de un documento, ya como JPEG (con fondo blanco si era transparente) y reducida si era enorme.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DocImage {
+    pub jpeg: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    /// Tamaño con el que el documento original la mostraba, en EMU (914 400 por pulgada), si lo decía.
+    pub extent: Option<(u32, u32)>,
+}
+
+impl std::fmt::Debug for DocImage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DocImage({}x{}, {} bytes)", self.width, self.height, self.jpeg.len())
+    }
+}
+
+impl DocImage {
+    /// Tamaño en puntos (1/72 de pulgada): el del documento original o, si no lo decía, el de sus píxeles a 96 ppp.
+    pub fn size_pt(&self) -> (f32, f32) {
+        match self.extent {
+            Some((cx, cy)) if cx > 0 && cy > 0 => (cx as f32 / 12_700.0, cy as f32 / 12_700.0),
+            _ => (self.width as f32 * 0.75, self.height as f32 * 0.75),
+        }
+    }
 }
 
 pub type Doc = Vec<Block>;
@@ -342,6 +371,7 @@ pub fn to_text(doc: &Doc) -> String {
                 out.push_str(text);
                 out.push_str("\n\n");
             }
+            Block::Image(_) => out.push_str("[imagen]\n\n"),
             Block::Table(rows) => {
                 push_gap(&mut out);
                 for row in rows {
@@ -389,6 +419,7 @@ pub fn to_markdown(doc: &Doc) -> String {
                 out.push_str(text);
                 out.push_str("\n```\n\n");
             }
+            Block::Image(_) => out.push_str("[imagen]\n\n"),
             Block::Table(rows) => {
                 push_gap(&mut out);
                 let width = rows.iter().map(Vec::len).max().unwrap_or(0);
@@ -433,6 +464,10 @@ pub fn to_html(doc: &Doc, title: &str) -> String {
                 body.push_str(&format!("<li>{}</li>\n", html_escape(text)));
             }
             Block::Pre(text) => body.push_str(&format!("<pre>{}</pre>\n", html_escape(text))),
+            Block::Image(image) => body.push_str(&format!(
+                "<p><img src=\"data:image/jpeg;base64,{}\" alt=\"\" style=\"max-width: 100%; height: auto;\"></p>\n",
+                base64::engine::general_purpose::STANDARD.encode(&image.jpeg)
+            )),
             Block::Table(rows) => {
                 body.push_str("<table>\n");
                 for (r, row) in rows.iter().enumerate() {

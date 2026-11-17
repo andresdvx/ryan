@@ -13,7 +13,7 @@ use serde_json::{json, Map, Value};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-use crate::doc::{self, Doc};
+use crate::doc::{self, Doc, DocImage};
 use crate::incoming::{self, FileInfo, Kind};
 use crate::pdf_out::{self, JpegPage};
 
@@ -276,6 +276,14 @@ fn convert_image(file: &FileInfo, target: &str, out_dir: &Path) -> Result<PathBu
         }
         other => Err(format!("no sé convertir una imagen a «{other}»")),
     }
+}
+
+/// Una imagen de un documento (PNG, JPG, GIF, WebP…) lista para incrustarla en un PDF o una página web: en JPEG y
+/// de 2000 píxeles como máximo. Un formato que no se sabe leer (EMF, SVG…) da `None`.
+pub(crate) fn doc_image_from_bytes(bytes: &[u8], extent: Option<(u32, u32)>) -> Option<DocImage> {
+    let image = image::load_from_memory(bytes).ok()?;
+    let image = if image.width().max(image.height()) > 2000 { image.resize(2000, 2000, FilterType::Lanczos3) } else { image };
+    Some(DocImage { jpeg: encode_jpeg(&image, 85).ok()?, width: image.width(), height: image.height(), extent })
 }
 
 fn jpeg_page(image: &DynamicImage) -> Result<JpegPage, String> {
@@ -686,5 +694,28 @@ mod tests {
         assert_eq!(outcome.outputs.len(), 2);
         assert_eq!(outcome.failures.len(), 1);
         assert!(outcome.failures[0].contains("b.exe"));
+    }
+
+    #[test]
+    fn un_word_con_imagenes_las_conserva_en_pdf_y_html() {
+        let d = dir("wordimg");
+        let out = d.join("salida");
+        let docx = d.join("informe.docx");
+        crate::office::tests::docx_with_image(&docx);
+        let file = incoming::inspect(&[docx]).unwrap().remove(0);
+
+        let pdf_path = convert(std::slice::from_ref(&file), "pdf", &out).unwrap().outputs.remove(0);
+        let pdf = std::fs::read(&pdf_path).unwrap();
+        let raw = String::from_utf8_lossy(&pdf);
+        assert!(raw.contains("/Subtype /Image") && raw.contains("/DCTDecode"), "la imagen está dentro del PDF");
+        let text = pdf_extract::extract_text_from_mem(&pdf).unwrap();
+        assert!(text.contains("Antes") && text.contains("Despu"), "y el texto también: {text:?}");
+
+        let html = std::fs::read_to_string(&convert(std::slice::from_ref(&file), "html", &out).unwrap().outputs[0]).unwrap();
+        assert!(html.contains("<img src=\"data:image/jpeg;base64,/9j/"), "en la página web va incrustada");
+        assert!(html.find("Antes").unwrap() < html.find("<img").unwrap() && html.find("<img").unwrap() < html.find("Despu").unwrap(), "en su sitio");
+
+        let md = std::fs::read_to_string(&convert(std::slice::from_ref(&file), "md", &out).unwrap().outputs[0]).unwrap();
+        assert!(md.contains("Antes\n\n[imagen]\n\nDespués"), "{md:?}");
     }
 }

@@ -2,13 +2,14 @@
 //! Los .docx y .pptx son zips de XML; aquí se lee solo el texto visible. Para Excel se usa `calamine` y para PDF
 //! `pdf-extract`. Nunca se ejecuta nada del archivo: solo se extrae texto.
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
 use zip::ZipArchive;
 
-use crate::doc::{decode_entities, Block, Doc};
+use crate::doc::{decode_entities, Block, Doc, DocImage};
 
 /// Un XML interno más grande que esto se rechaza (un zip puede esconder gigas tras un archivo pequeño).
 const MAX_XML_BYTES: u64 = 48 * 1024 * 1024;
@@ -17,6 +18,10 @@ pub const MAX_ROWS: usize = 5000;
 pub const MAX_COLS: usize = 100;
 /// Un PDF más grande que esto no se lee.
 const MAX_PDF_BYTES: u64 = 80 * 1024 * 1024;
+
+/// Imágenes que se leen de un documento como mucho, y tamaño máximo de cada una.
+const MAX_DOC_IMAGES: usize = 200;
+const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 
 pub type Sheet = (String, Vec<Vec<String>>);
 
@@ -111,9 +116,49 @@ fn heading_level(style: &str) -> Option<u8> {
 // Word y PowerPoint
 // ---------------------------------------------------------------------------------------------
 
+/// Qué archivo de `word/` es cada imagen del documento (`rId5` → `word/media/image1.png`).
+fn docx_images(archive: &mut ZipArchive<File>) -> HashMap<String, String> {
+    let Ok(xml) = read_entry(archive, "word/_rels/document.xml.rels") else { return HashMap::new() };
+    let mut map = HashMap::new();
+    for tok in tokens(&xml) {
+        let Tok::Open { name: "Relationship", attrs, .. } = tok else { continue };
+        let (Some(id), Some(target), Some(kind)) = (attr(attrs, "Id"), attr(attrs, "Target"), attr(attrs, "Type")) else { continue };
+        if !kind.ends_with("/image") || attr(attrs, "TargetMode") == Some("External") {
+            continue;
+        }
+        let path = match target.strip_prefix('/') {
+            Some(absolute) => absolute.to_string(),
+            None => format!("word/{target}"),
+        };
+        if !path.contains("..") {
+            map.insert(id.to_string(), path);
+        }
+    }
+    map
+}
+
+/// Una imagen de dentro del .docx, o `None` si no se puede leer (un formato raro, demasiado grande…).
+fn docx_image(archive: &mut ZipArchive<File>, path: &str, extent: Option<(u32, u32)>) -> Option<DocImage> {
+    let mut entry = archive.by_name(path).ok()?;
+    if entry.size() > MAX_IMAGE_BYTES {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    (&mut entry).take(MAX_IMAGE_BYTES).read_to_end(&mut bytes).ok()?;
+    crate::convert::doc_image_from_bytes(&bytes, extent)
+}
+
 pub fn docx_doc(path: &Path) -> Result<Doc, String> {
     let mut archive = open_zip(path)?;
     let xml = read_entry(&mut archive, "word/document.xml")?;
+    let image_files = docx_images(&mut archive);
+    let mut extent: Option<(u32, u32)> = None;
+    let mut found_images = 0usize;
+    // Word guarda muchas imágenes y cuadros dos veces: la versión moderna y otra de respaldo para programas antiguos.
+    let mut in_fallback = false;
+    // Las imágenes de un párrafo van justo después de su texto; las de una tabla, después de la tabla.
+    let mut para_images: Vec<DocImage> = Vec::new();
+    let mut table_images: Vec<DocImage> = Vec::new();
     let mut doc = Doc::new();
     let mut para = String::new();
     let mut level: Option<u8> = None;
@@ -123,11 +168,38 @@ pub fn docx_doc(path: &Path) -> Result<Doc, String> {
     let mut row: Vec<String> = Vec::new();
     let mut cell = String::new();
     for tok in tokens(&xml) {
+        match &tok {
+            Tok::Open { name: "mc:Fallback", empty: false, .. } => {
+                in_fallback = true;
+                continue;
+            }
+            Tok::Close("mc:Fallback") => {
+                in_fallback = false;
+                continue;
+            }
+            _ if in_fallback => continue,
+            _ => {}
+        }
         match tok {
+            Tok::Open { name: "wp:extent", attrs, .. } => {
+                extent = attr(attrs, "cx").and_then(|v| v.parse().ok()).zip(attr(attrs, "cy").and_then(|v| v.parse().ok()));
+            }
+            Tok::Open { name: "a:blip", attrs, .. } | Tok::Open { name: "v:imagedata", attrs, .. } => {
+                let id = attr(attrs, "r:embed").or_else(|| attr(attrs, "r:id"));
+                if let Some(file) = id.and_then(|id| image_files.get(id)) {
+                    if found_images < MAX_DOC_IMAGES {
+                        if let Some(image) = docx_image(&mut archive, file, extent.take()) {
+                            found_images += 1;
+                            if table.is_some() { table_images.push(image) } else { para_images.push(image) }
+                        }
+                    }
+                }
+            }
             Tok::Open { name: "w:p", empty, .. } => {
                 para.clear();
                 level = None;
                 bullet = false;
+                extent = None;
                 if empty {
                     continue;
                 }
@@ -148,13 +220,17 @@ pub fn docx_doc(path: &Path) -> Result<Doc, String> {
                         }
                         cell.push_str(&text.replace('\n', " "));
                     }
-                } else if !text.is_empty() {
-                    doc.push(match (level, bullet) {
-                        (Some(level), _) => Block::Heading(level, text),
-                        (None, true) => Block::Bullet(text),
-                        _ => Block::Para(text),
-                    });
+                } else {
+                    if !text.is_empty() {
+                        doc.push(match (level, bullet) {
+                            (Some(level), _) => Block::Heading(level, text),
+                            (None, true) => Block::Bullet(text),
+                            _ => Block::Para(text),
+                        });
+                    }
+                    doc.extend(para_images.drain(..).map(Block::Image));
                 }
+                para_images.clear();
                 para.clear();
             }
             Tok::Open { name: "w:tbl", .. } => table = Some(Vec::new()),
@@ -162,6 +238,7 @@ pub fn docx_doc(path: &Path) -> Result<Doc, String> {
                 if let Some(rows) = table.take() {
                     doc.push(Block::Table(rows));
                 }
+                doc.extend(table_images.drain(..).map(Block::Image));
             }
             Tok::Open { name: "w:tr", .. } => row = Vec::new(),
             Tok::Close("w:tr") => {
@@ -175,7 +252,7 @@ pub fn docx_doc(path: &Path) -> Result<Doc, String> {
         }
     }
     if doc.is_empty() {
-        return Err("el documento no tiene texto".into());
+        return Err("el documento no tiene texto ni imágenes".into());
     }
     Ok(doc)
 }
@@ -310,7 +387,7 @@ pub fn pdf_text(path: &Path) -> Result<String, String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::io::Write;
 
     use zip::write::SimpleFileOptions;
@@ -428,5 +505,64 @@ mod tests {
         assert_eq!(heading_level("Heading3"), Some(3));
         assert_eq!(heading_level("Ttulo1"), Some(1));
         assert_eq!(heading_level("Normal"), None);
+    }
+
+    fn png_bytes(w: u32, h: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(w, h, image::Rgb([200, 30, 30]))).write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png).unwrap();
+        bytes
+    }
+
+    /// Un .docx con texto e imágenes, como el que crea Word: las imágenes se enlazan desde `document.xml` por su `rId`.
+    pub(crate) fn docx_with_image(path: &Path) {
+        let document = r#"<?xml version="1.0"?><w:document><w:body>
+            <w:p><w:r><w:t>Antes</w:t></w:r></w:p>
+            <w:p><w:r><w:drawing><wp:inline><wp:extent cx="1905000" cy="952500"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="rId5"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>
+            <w:p><w:r><w:t>Después</w:t></w:r></w:p>
+            <w:p><w:r><mc:AlternateContent><mc:Choice><w:drawing><wp:inline><a:blip r:embed="rId5"/></wp:inline></w:drawing></mc:Choice><mc:Fallback><w:pict><v:imagedata r:id="rId5"/></w:pict><w:t>texto duplicado</w:t></mc:Fallback></mc:AlternateContent></w:r></w:p>
+            <w:p><w:r><w:t>Con texto </w:t></w:r><w:r><w:drawing><wp:inline><a:blip r:embed="rId9"/></wp:inline></w:drawing></w:r></w:p>
+            </w:body></w:document>"#;
+        let rels = r#"<?xml version="1.0"?><Relationships xmlns="x"><Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/><Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="http://x" TargetMode="External"/></Relationships>"#;
+        let mut zip = ZipWriter::new(File::create(path).unwrap());
+        for (name, body) in [("word/document.xml", document.as_bytes().to_vec()), ("word/_rels/document.xml.rels", rels.as_bytes().to_vec()), ("word/media/image1.png", png_bytes(80, 40))] {
+            zip.start_file(name, SimpleFileOptions::default()).unwrap();
+            zip.write_all(&body).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn lee_las_imagenes_de_un_docx_en_su_sitio() {
+        let path = temp_file("conimagen.docx");
+        docx_with_image(&path);
+        let doc = docx_doc(&path).unwrap();
+        assert_eq!(doc.len(), 5, "{doc:?}");
+        assert_eq!(doc[0], Block::Para("Antes".into()));
+        match &doc[1] {
+            Block::Image(image) => {
+                assert_eq!((image.width, image.height, image.extent), (80, 40, Some((1_905_000, 952_500))));
+                assert!(image.jpeg.starts_with(&[0xFF, 0xD8]), "se guarda como JPEG");
+                assert_eq!(image.size_pt(), (150.0, 75.0), "el tamaño que tenía en Word");
+            }
+            other => panic!("se esperaba una imagen, salió {other:?}"),
+        }
+        assert_eq!(doc[2], Block::Para("Después".into()));
+        assert!(matches!(&doc[3], Block::Image(_)), "una imagen con versión de respaldo cuenta una sola vez, y su texto de respaldo no se duplica");
+        assert_eq!(doc[4], Block::Para("Con texto".into()), "una imagen que no se encuentra se ignora sin romper nada");
+    }
+
+    #[test]
+    fn un_docx_solo_con_imagenes_no_se_considera_vacio() {
+        let path = temp_file("soloimagen.docx");
+        let document = r#"<w:document><w:body><w:p><w:r><w:drawing><a:blip r:embed="rId1"/></w:drawing></w:r></w:p></w:body></w:document>"#;
+        let rels = r#"<Relationships><Relationship Id="rId1" Type="http://x/relationships/image" Target="media/a.png"/></Relationships>"#;
+        let mut zip = ZipWriter::new(File::create(&path).unwrap());
+        for (name, body) in [("word/document.xml", document.as_bytes().to_vec()), ("word/_rels/document.xml.rels", rels.as_bytes().to_vec()), ("word/media/a.png", png_bytes(10, 10))] {
+            zip.start_file(name, SimpleFileOptions::default()).unwrap();
+            zip.write_all(&body).unwrap();
+        }
+        zip.finish().unwrap();
+        let doc = docx_doc(&path).unwrap();
+        assert!(matches!(doc.as_slice(), [Block::Image(image)] if image.extent.is_none() && image.size_pt() == (7.5, 7.5)));
     }
 }
