@@ -176,6 +176,12 @@ listen("character-state", (e) => {
   playAnimation(e.payload);
 });
 
+// Se está arrastrando un archivo por encima: el personaje se ilumina para decir «suéltalo aquí».
+listen("file-drag", (e) => {
+  if (e.payload) pet.dataset.drag = "on";
+  else delete pet.dataset.drag;
+});
+
 // Qué avisa la alerta: por defecto un recordatorio; la batería usa otro icono.
 listen("pet-alert-kind", (e) => {
   pet.dataset.alertKind = e.payload;

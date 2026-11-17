@@ -345,6 +345,10 @@ window.__TAURI__.event.listen("character-state", (e) => {
 });
 window.__TAURI__.event.listen("chat-log", (e) => addMessage("assistant", e.payload));
 
+// Arrastrar un archivo por encima del chat: un aviso grande dice dónde soltarlo (el menú sale al soltar).
+const dropOverlay = document.getElementById("drop-overlay");
+window.__TAURI__.event.listen("file-drag", (e) => (dropOverlay.hidden = !e.payload));
+
 // Respuesta en directo: el texto va apareciendo en una burbuja y, al terminar, esta se sustituye por el mensaje
 // completo (ya con formato). Si se interrumpe, lo escrito se queda marcado como incompleto.
 function streamDelta(delta) {

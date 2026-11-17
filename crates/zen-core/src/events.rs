@@ -22,6 +22,8 @@ pub enum Event {
     BatteryCharged,
     /// Terminó de descargarse un archivo en la carpeta Descargas.
     DownloadFinished { name: String },
+    /// El usuario soltó un archivo sobre Ryan (el chat o el personaje).
+    FileDropped { name: String },
     /// Se conectó una unidad extraíble (memoria USB, lector de tarjetas): su letra.
     UsbConnected { drive: char },
     /// Empezó a sonar música (o un vídeo) en el equipo, en cualquier aplicación.

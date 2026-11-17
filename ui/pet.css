@@ -73,6 +73,16 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 #pet[data-state="success"] { animation: bounce 0.5s ease-out 2; }
 #pet.bounce { animation: bounce 0.5s ease-out; }
 
+/* Arrastrando un archivo encima: el personaje brilla, crece un poco y muestra un clip. */
+#pet[data-drag="on"] #flip { animation: drop-pulse 0.7s ease-in-out infinite alternate; }
+#pet[data-drag="on"] #rig::before {
+  content: "\1F4CE"; position: absolute; z-index: 2; top: -4px; left: 50%; translate: -50% 0; font: 22px/1 "Segoe UI Emoji", sans-serif; animation: bob 0.5s ease-in-out infinite;
+}
+@keyframes drop-pulse {
+  from { transform: scale(1); filter: drop-shadow(0 0 4px var(--pet-accent, #ff8fb8)); }
+  to { transform: scale(1.08); filter: drop-shadow(0 0 12px var(--pet-accent, #ff8fb8)); }
+}
+
 /* Un estado con frames dibujados aparte ya trae su propio movimiento: no se le añade el balanceo por código. */
 #pet[data-own="1"] #rig { animation: none; }
 

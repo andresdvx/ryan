@@ -62,6 +62,8 @@ pub struct Settings {
     pub disabled_apps: BTreeSet<String>,
     /// Aplicaciones del menú Inicio que el usuario permitió abrir a la IA.
     pub custom_apps: Vec<CustomApp>,
+    /// Carpeta donde se guarda lo que se convierte al soltar un archivo sobre Ryan. Sin elegir, el Escritorio.
+    pub convert_dir: Option<String>,
 }
 
 impl Default for Settings {
@@ -91,6 +93,7 @@ impl Default for Settings {
             music_reaction: true,
             disabled_apps: BTreeSet::new(),
             custom_apps: Vec::new(),
+            convert_dir: None,
         }
     }
 }
@@ -237,6 +240,8 @@ impl Settings {
                     Some(CustomApp { key: app["key"].as_str()?.into(), name: app["name"].as_str()?.into(), app_id: app["app_id"].as_str()?.into() })
                 })
                 .collect(),
+            // Solo se acepta una ruta absoluta y razonable: un valor raro vuelve al Escritorio.
+            convert_dir: value["convert_dir"].as_str().filter(|path| !path.is_empty() && path.len() < 400 && std::path::Path::new(path).is_absolute()).map(str::to_string),
         }
     }
 
@@ -263,6 +268,7 @@ impl Settings {
             "usage_comments": self.usage_comments,
             "profile": self.profile,
             "music_reaction": self.music_reaction,
+            "convert_dir": self.convert_dir,
             "apps": {
                 "disabled": self.disabled_apps,
                 "custom": self.custom_apps.iter().map(|app| json!({ "key": app.key, "name": app.name, "app_id": app.app_id })).collect::<Vec<_>>(),
@@ -440,6 +446,7 @@ mod tests {
         settings.memory_enabled = false;
         settings.usage_comments = false;
         settings.music_reaction = false;
+        settings.convert_dir = Some("D:\\Convertidos".into());
         settings.disabled_apps.insert("steam".into());
         settings.custom_apps.push(CustomApp { key: "docker_desktop".into(), name: "Docker Desktop".into(), app_id: "Docker.DockerForWindows".into() });
         settings.set_tool_enabled("open_application", false);

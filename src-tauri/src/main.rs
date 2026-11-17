@@ -26,6 +26,7 @@ use settings::Settings;
 mod alarms;
 mod behavior;
 mod characters;
+mod filedrop;
 mod media;
 mod music;
 mod notify;
@@ -1278,6 +1279,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 fn main() {
     tauri::Builder::default()
         .manage(music::MusicFlag::default())
+        .manage(filedrop::DropState::default())
+        .plugin(tauri_plugin_dialog::init())
         // Debe ser el primer plugin: si ya hay una copia en marcha, esta se cierra y abre el chat de la otra.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_chat(app)))
         .plugin(
@@ -1310,6 +1313,14 @@ fn main() {
             open_recycle_bin,
             hide_quick_cmd,
             resize_quick,
+            filedrop::file_menu_state,
+            filedrop::file_menu_close,
+            filedrop::file_menu_resize,
+            filedrop::file_menu_ai,
+            filedrop::file_menu_convert,
+            filedrop::file_menu_choose_dir,
+            filedrop::file_menu_reset_dir,
+            filedrop::file_menu_reveal,
             quick_submit,
             open_chat_from_quick,
             set_quick_shortcut,
@@ -1430,6 +1441,7 @@ fn main() {
             alarms::spawn(app.handle().clone(), reminders);
             media::spawn(app.handle().clone());
             music::spawn(app.handle().clone());
+            filedrop::attach(app.handle());
             notify::spawn(app.handle().clone());
             power::spawn(app.handle().clone());
             usage::spawn(app.handle().clone());
