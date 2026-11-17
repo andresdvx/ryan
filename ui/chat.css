@@ -377,6 +377,21 @@ body[data-mood="sleepy"] .badge img { animation-duration: 6s; filter: saturate(0
 .reminder.soon { border-color: rgb(var(--accent-rgb) / 0.6); box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.12); }
 .reminder.soon .left { font-weight: 600; color: var(--accent); }
 .hint.empty { padding: 4px 2px; }
+
+/* Arrastrando un archivo sobre el chat */
+.drop-overlay {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 18px; background: rgb(var(--accent-rgb) / 0.2);
+  backdrop-filter: blur(3px); pointer-events: none;
+}
+.drop-card {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; max-width: 360px; padding: 30px 22px; text-align: center;
+  border: 2px dashed rgb(var(--accent-rgb) / 0.9); border-radius: 22px; background: color-mix(in srgb, var(--accent) 14%, #1a1822);
+  animation: drop-bounce 0.8s ease-in-out infinite alternate;
+}
+.drop-card strong { font-size: 17px; }
+.drop-card span { font-size: 13px; color: var(--muted); }
+.drop-emoji { font-size: 38px; }
+@keyframes drop-bounce { from { transform: translateY(0); } to { transform: translateY(-6px); } }
 .section-title { margin: 4px 2px 0; font-size: 15px; font-weight: 700; }
 .section-title:not(:first-child) { margin-top: 10px; }
 .tasks { display: flex; flex-direction: column; gap: 8px; }

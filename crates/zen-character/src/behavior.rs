@@ -139,6 +139,8 @@ mod tests {
         let mut c = Character::new(t0);
         assert_eq!(c.handle(&Event::DownloadFinished { name: "a.zip".into() }, t0), Some(State::Happy));
         let mut c = Character::new(t0);
+        assert_eq!(c.handle(&Event::FileDropped { name: "a.pdf".into() }, t0), Some(State::Happy));
+        let mut c = Character::new(t0);
         assert_eq!(c.handle(&Event::UsbConnected { drive: 'E' }, t0), Some(State::Surprised));
         let mut c = Character::new(t0);
         assert_eq!(c.handle(&Event::ReminderSoon { text: "reunión".into(), minutes: 10 }, t0), Some(State::Alert));

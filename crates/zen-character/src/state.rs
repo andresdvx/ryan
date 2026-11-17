@@ -42,7 +42,7 @@ pub fn on_event(state: State, event: &Event) -> State {
         (Alert, CharacterClicked | CharacterDragged | ChatOpened) => Idle,
         (Thinking | Working | Alert, BatteryLow { .. } | RestSuggested { .. }) => state,
         (_, BatteryLow { .. } | RestSuggested { .. }) => Alert,
-        (Idle | Walking | Sleeping, BatteryCharged | DownloadFinished { .. }) => Happy,
+        (Idle | Walking | Sleeping, BatteryCharged | DownloadFinished { .. } | FileDropped { .. }) => Happy,
         // Con música se alegra si está en reposo y se despierta si dormía; ocupada o paseando, no se interrumpe.
         (Idle, MusicStarted) => Happy,
         (Sleeping, MusicStarted) => Idle,
