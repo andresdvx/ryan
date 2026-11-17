@@ -103,6 +103,7 @@ function render(data) {
   askInput.value = "";
   noteEl.className = "note";
   noteEl.textContent = data.ask.reason
+    ?? data.ask.hint
     ?? (data.provider.local ? `Se queda en tu equipo: ${data.provider.name} funciona aquí.` : `Analizar, resumir y preguntar envían el contenido a ${data.provider.name}.`);
 
   const convertOffers = data.offers.filter((o) => o.group === "convert");
@@ -142,6 +143,7 @@ async function convert(offer) {
       item.title = name;
       return item;
     }));
+    $("fm-done-notes").textContent = (result.notes ?? []).join(" ");
     $("fm-done-failures").textContent = result.failures.length ? `No se pudo convertir: ${result.failures.join(" ")}` : "";
     show("done");
   } catch (error) {

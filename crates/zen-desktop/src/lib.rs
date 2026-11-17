@@ -22,6 +22,7 @@ pub mod pdf_out;
 pub mod listening;
 pub mod memory;
 pub mod mood;
+pub mod ocr;
 mod media_tools;
 mod move_tools;
 mod music_tools;

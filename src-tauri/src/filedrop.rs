@@ -122,18 +122,25 @@ fn menu_json(app: &AppHandle) -> Value {
     let files = app.state::<DropState>().files();
     let settings = Settings::load();
     let readable: Vec<&FileInfo> = files.iter().filter(|f| incoming::can_ask(f.kind)).collect();
+    let provider = settings.provider.display_name();
     let only_images = !readable.is_empty() && readable.iter().all(|f| f.kind == Kind::Image);
-    let reason = if readable.is_empty() {
-        Some("No sé leer el contenido de este tipo de archivo, pero sí puedo convertirlo o comprimirlo.".to_string())
-    } else if only_images && !settings.provider.supports_images() {
-        Some(format!("{} no puede ver imágenes. Con un modelo con visión en Ollama sí podría.", settings.provider.display_name()))
+    // Un modelo que no ve imágenes lee su texto con el OCR de Windows (en el equipo) y recibe solo ese texto.
+    let needs_ocr = !settings.provider.supports_images() && readable.iter().any(|f| f.kind == Kind::Image);
+    let (reason, hint) = if readable.is_empty() {
+        (Some("No sé leer el contenido de este tipo de archivo, pero sí puedo convertirlo o comprimirlo.".to_string()), None)
+    } else if needs_ocr {
+        match zen_desktop::ocr::available() {
+            Ok(language) => (None, Some(format!("{provider} no ve imágenes: leeré su texto con el OCR de Windows ({language}) y le enviaré solo ese texto."))),
+            Err(why) if only_images => (Some(format!("{provider} no puede ver imágenes y este equipo no puede leer su texto: {why}.")), None),
+            Err(why) => (None, Some(format!("Las imágenes se saltarán: {provider} no las ve y {why}."))),
+        }
     } else {
-        None
+        (None, None)
     };
     json!({
         "files": files.iter().map(|f| json!({ "name": f.name, "size": f.size, "kind": f.label(), "type": format!("{:?}", f.kind).to_lowercase(), "folder": f.kind == Kind::Folder, "image": f.kind == Kind::Image })).collect::<Vec<_>>(),
         "offers": incoming::offers_for(&files).iter().map(|o| json!({ "id": o.id, "label": o.label, "group": o.group })).collect::<Vec<_>>(),
-        "ask": { "enabled": reason.is_none(), "reason": reason },
+        "ask": { "enabled": reason.is_none(), "reason": reason, "hint": hint },
         "provider": { "name": settings.provider.display_name(), "local": !settings.provider.needs_key() },
         "output": output_json(&settings),
     })
@@ -184,12 +191,8 @@ pub async fn file_menu_ai(app: AppHandle, action: String, question: Option<Strin
     if files.is_empty() {
         return Err("Ya no hay ningún archivo en el menú; suéltalo otra vez.".into());
     }
-    let settings = Settings::load();
-    let readable: Vec<&FileInfo> = files.iter().filter(|f| incoming::can_ask(f.kind)).collect();
-    if !readable.is_empty() && readable.iter().all(|f| f.kind == Kind::Image) && !settings.provider.supports_images() {
-        return Err(format!("{} no puede ver imágenes. Cambia a un modelo con visión en Ollama.", settings.provider.display_name()));
-    }
-    let request = tauri::async_runtime::spawn_blocking(move || incoming::build_ai_request(&files, &action)).await.map_err(|e| e.to_string())??;
+    let vision = Settings::load().provider.supports_images();
+    let request = tauri::async_runtime::spawn_blocking(move || incoming::build_ai_request(&files, &action, vision)).await.map_err(|e| e.to_string())??;
     file_menu_close(app.clone());
     std::thread::spawn(move || run_request(&app, request));
     Ok(())
@@ -237,7 +240,7 @@ pub async fn file_menu_convert(app: AppHandle, target: String) -> Result<Value, 
     let names: Vec<String> = outcome.outputs.iter().map(|p| p.file_name().map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned())).collect();
     *app.state::<DropState>().outputs.lock().expect("salidas envenenado") = outcome.outputs;
     crate::say(&app, format!("📁 Guardé en {}{}: {}", if custom { "" } else { "el " }, label, names.join(", ")));
-    Ok(json!({ "outputs": names, "dir": label, "failures": outcome.failures }))
+    Ok(json!({ "outputs": names, "dir": label, "failures": outcome.failures, "notes": outcome.notes }))
 }
 
 /// Deja elegir otra carpeta de salida. Solo esta ruta, que sale del diálogo nativo, se guarda y se usa.

@@ -4,7 +4,7 @@
 //! Límite conocido: las fuentes estándar usan la codificación de Windows (Latin-1 más unos pocos símbolos), así que
 //! tildes, eñes y la mayoría de signos salen bien, pero un carácter fuera de ella (emojis, chino, cirílico) sale como «?».
 
-use crate::doc::{Block, Doc};
+use crate::doc::{Block, Doc, DocImage};
 
 const PAGE_W: f32 = 595.0;
 const PAGE_H: f32 = 842.0;
@@ -130,15 +130,52 @@ struct Item {
     text: String,
 }
 
-struct Layout {
+/// Una imagen colocada en una página.
+struct Figure {
+    image: usize,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+struct Layout<'a> {
     pages: Vec<Vec<Item>>,
+    /// Las imágenes de cada página (en paralelo a `pages`) y las imágenes distintas del documento.
+    figures: Vec<Vec<Figure>>,
+    images: Vec<&'a DocImage>,
     /// Borde superior de la siguiente línea.
     cursor: f32,
 }
 
-impl Layout {
+impl<'a> Layout<'a> {
     fn new() -> Self {
-        Self { pages: vec![Vec::new()], cursor: PAGE_H - MARGIN }
+        Self { pages: vec![Vec::new()], figures: vec![Vec::new()], images: Vec::new(), cursor: PAGE_H - MARGIN }
+    }
+
+    /// Pone una imagen a todo lo ancho que le deje la página (sin agrandarla) y la ajusta si es más alta que una hoja.
+    fn figure(&mut self, image: &'a DocImage) {
+        let (mut w, mut h) = image.size_pt();
+        if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        let scale = ((PAGE_W - 2.0 * MARGIN) / w).min((PAGE_H - 2.0 * MARGIN - 4.0) / h).min(1.0);
+        (w, h) = (w * scale, h * scale);
+        self.gap(4.0);
+        self.need(h);
+        if self.pages.len() >= MAX_PAGES && self.cursor - h < MARGIN {
+            return;
+        }
+        let index = match self.images.iter().position(|known| std::ptr::eq(*known, image)) {
+            Some(index) => index,
+            None => {
+                self.images.push(image);
+                self.images.len() - 1
+            }
+        };
+        let y = self.cursor - h;
+        self.figures.last_mut().expect("siempre hay una página").push(Figure { image: index, x: MARGIN, y, w, h });
+        self.cursor -= h + 8.0;
     }
 
     fn at_top(&self) -> bool {
@@ -148,6 +185,7 @@ impl Layout {
     fn new_page(&mut self) {
         if self.pages.len() < MAX_PAGES {
             self.pages.push(Vec::new());
+            self.figures.push(Vec::new());
         }
         self.cursor = PAGE_H - MARGIN;
     }
@@ -185,7 +223,7 @@ fn heading_size(level: u8) -> f32 {
     }
 }
 
-fn layout_doc(doc: &Doc) -> Layout {
+fn layout_doc(doc: &Doc) -> Layout<'_> {
     let mut layout = Layout::new();
     let width = PAGE_W - 2.0 * MARGIN;
     for block in doc {
@@ -233,6 +271,7 @@ fn layout_doc(doc: &Doc) -> Layout {
                 }
                 layout.gap(6.0);
             }
+            Block::Image(image) => layout.figure(image),
             Block::Table(rows) => {
                 let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
                 if columns == 0 {
@@ -339,8 +378,22 @@ pub fn doc_to_pdf(doc: &Doc) -> Vec<u8> {
         .map(|name| b.add(format!("<< /Type /Font /Subtype /Type1 /BaseFont /{name} /Encoding /WinAnsiEncoding >>").into_bytes()))
         .collect();
     let mut kids = Vec::new();
-    for page in &layout.pages {
+    // Cada imagen distinta se incrusta una sola vez, aunque salga en varias páginas.
+    let mut image_ids: Vec<Option<usize>> = vec![None; layout.images.len()];
+    for (page, figures) in layout.pages.iter().zip(&layout.figures) {
         let mut content = Vec::new();
+        let mut xobjects = String::new();
+        for figure in figures {
+            let id = *image_ids[figure.image].get_or_insert_with(|| {
+                let image = layout.images[figure.image];
+                b.add(stream(
+                    &format!("/Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode", image.width, image.height),
+                    &image.jpeg,
+                ))
+            });
+            xobjects.push_str(&format!("/Im{} {id} 0 R ", figure.image));
+            content.extend_from_slice(format!("q {:.2} 0 0 {:.2} {:.2} {:.2} cm /Im{} Do Q\n", figure.w, figure.h, figure.x, figure.y, figure.image).as_bytes());
+        }
         for item in page {
             content.extend_from_slice(format!("BT /{} {:.2} Tf 1 0 0 1 {:.2} {:.2} Tm (", item.font.resource(), item.size, item.x, item.y).as_bytes());
             content.extend_from_slice(&escape(&item.text));
@@ -349,7 +402,7 @@ pub fn doc_to_pdf(doc: &Doc) -> Vec<u8> {
         let content_id = b.add(stream("", &content));
         let page_id = b.add(
             format!(
-                "<< /Type /Page /Parent {pages_id} 0 R /MediaBox [0 0 {PAGE_W} {PAGE_H}] /Resources << /Font << /F1 {} 0 R /F2 {} 0 R /F3 {} 0 R >> >> /Contents {content_id} 0 R >>",
+                "<< /Type /Page /Parent {pages_id} 0 R /MediaBox [0 0 {PAGE_W} {PAGE_H}] /Resources << /Font << /F1 {} 0 R /F2 {} 0 R /F3 {} 0 R >> /XObject << {xobjects}>> >> /Contents {content_id} 0 R >>",
                 fonts[0], fonts[1], fonts[2]
             )
             .into_bytes(),
@@ -472,5 +525,44 @@ mod tests {
         let text = String::from_utf8_lossy(&pdf);
         assert!(text.contains("/Count 2") && text.contains("/DCTDecode"));
         assert!(text.contains("/MediaBox [0 0 842 595]") && text.contains("/MediaBox [0 0 595 842]"), "horizontal y vertical");
+    }
+
+    fn fake_image(width: u32, height: u32, extent: Option<(u32, u32)>) -> DocImage {
+        DocImage { jpeg: vec![0xFF, 0xD8, 0xFF, 0xD9], width, height, extent }
+    }
+
+    #[test]
+    fn las_imagenes_de_un_documento_entran_en_la_pagina() {
+        let doc: Doc = vec![
+            Block::Para("Antes de la imagen".into()),
+            Block::Image(fake_image(200, 100, None)),
+            Block::Image(fake_image(4000, 1000, None)), // más ancha que la hoja: se reduce
+            Block::Image(fake_image(100, 3000, None)),  // más alta que la hoja: se reduce y pasa de página
+            Block::Para("Después".into()),
+        ];
+        let layout = layout_doc(&doc);
+        let figures: Vec<&Figure> = layout.figures.iter().flatten().collect();
+        assert_eq!(figures.len(), 3);
+        for figure in &figures {
+            assert!(figure.x >= MARGIN - 0.01 && figure.x + figure.w <= PAGE_W - MARGIN + 0.01, "cabe a lo ancho: {}", figure.w);
+            assert!(figure.y >= MARGIN - 0.01 && figure.y + figure.h <= PAGE_H - MARGIN + 0.01, "cabe a lo alto");
+        }
+        assert!((figures[0].w - 150.0).abs() < 0.01 && (figures[0].h - 75.0).abs() < 0.01, "una imagen pequeña no se agranda");
+        assert!(layout.pages.len() >= 2, "la imagen muy alta no cabe junto a las demás");
+        let pdf = doc_to_pdf(&doc);
+        let text = String::from_utf8_lossy(&pdf);
+        assert_eq!(text.matches("/Subtype /Image").count(), 3);
+        assert!(text.contains("/XObject << /Im0") && text.contains("/DCTDecode") && text.contains(" Do Q"));
+        assert_eq!(layout.figures.len(), layout.pages.len(), "una lista de imágenes por página");
+    }
+
+    #[test]
+    fn el_tamano_original_de_word_manda_sobre_los_pixeles() {
+        let from_word = fake_image(1000, 500, Some((2_540_000, 1_270_000))); // 200 x 100 pt
+        assert_eq!(from_word.size_pt(), (200.0, 100.0));
+        let doc: Doc = vec![Block::Image(from_word)];
+        let layout = layout_doc(&doc);
+        let figure = &layout.figures[0][0];
+        assert!((figure.w - 200.0).abs() < 0.01 && (figure.h - 100.0).abs() < 0.01);
     }
 }
