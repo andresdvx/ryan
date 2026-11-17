@@ -16,6 +16,8 @@ const MAX_XML_BYTES: u64 = 48 * 1024 * 1024;
 /// Filas y columnas que se leen de cada hoja de Excel.
 pub const MAX_ROWS: usize = 5000;
 pub const MAX_COLS: usize = 100;
+/// Cómo empieza el error de un PDF sin capa de texto (un escaneo): `incoming` lo reconoce para probar con el OCR.
+pub const NO_TEXT: &str = "el PDF no tiene texto seleccionable";
 /// Un PDF más grande que esto no se lee.
 const MAX_PDF_BYTES: u64 = 80 * 1024 * 1024;
 
@@ -381,9 +383,28 @@ pub fn pdf_text(path: &Path) -> Result<String, String> {
     }
     let cleaned = cleaned.trim().to_string();
     if cleaned.is_empty() {
-        return Err("el PDF no tiene texto seleccionable (parece un escaneo); todavía no sé leer imágenes de texto (OCR)".into());
+        return Err(format!("{NO_TEXT} (parece un escaneo)"));
     }
     Ok(cleaned)
+}
+
+/// El texto de un PDF. Si no tiene capa de texto (un escaneo), se prueba con el OCR de Windows; en ese caso se devuelve
+/// también una nota para el usuario que dice cómo se leyó.
+pub fn pdf_text_or_ocr(path: &Path) -> Result<(String, Option<String>), String> {
+    match pdf_text(path) {
+        Ok(text) => Ok((text, None)),
+        Err(error) if error.starts_with(NO_TEXT) => match crate::ocr::ocr_pdf(path) {
+            Ok(output) => {
+                let mut note = format!("Era un PDF escaneado: leí su texto con el OCR de Windows ({}).", output.language);
+                if output.cut {
+                    note.push_str(&format!(" Solo leí las primeras {} páginas.", crate::ocr::MAX_PDF_PAGES));
+                }
+                Ok((output.text, Some(note)))
+            }
+            Err(ocr_error) => Err(format!("{error}. Probé con el OCR de Windows y tampoco pude: {ocr_error}")),
+        },
+        Err(error) => Err(error),
+    }
 }
 
 #[cfg(test)]
@@ -486,7 +507,7 @@ pub(crate) mod tests {
         assert!(pdf_text(&broken).is_err());
         let blank = temp_file("blanco.pdf");
         std::fs::write(&blank, crate::pdf_out::doc_to_pdf(&Vec::new())).unwrap();
-        assert!(pdf_text(&blank).unwrap_err().contains("OCR"), "un PDF sin texto explica por qué");
+        assert!(pdf_text(&blank).unwrap_err().starts_with(NO_TEXT), "un PDF sin texto se reconoce para probar con el OCR");
     }
 
     #[test]

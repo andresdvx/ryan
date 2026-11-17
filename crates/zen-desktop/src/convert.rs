@@ -30,6 +30,8 @@ const PDF_IMAGE_QUALITY: u8 = 90;
 pub struct Outcome {
     pub outputs: Vec<PathBuf>,
     pub failures: Vec<String>,
+    /// Cosas que conviene decirle al usuario (por ejemplo, que se usó el OCR).
+    pub notes: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -246,7 +248,15 @@ fn encode_image(image: &DynamicImage, ext: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn convert_image(file: &FileInfo, target: &str, out_dir: &Path) -> Result<PathBuf, String> {
+fn convert_image(file: &FileInfo, target: &str, out_dir: &Path, notes: &mut Vec<String>) -> Result<PathBuf, String> {
+    if target == "ocr" {
+        let output = crate::ocr::ocr_image(&file.path)?;
+        if output.text.is_empty() {
+            return Err("no encontré texto en la imagen".into());
+        }
+        notes.push(format!("Leí el texto con el OCR de Windows ({}).", output.language));
+        return write_new(out_dir, &file.stem(), "txt", output.text.as_bytes());
+    }
     let image = load_image(&file.path)?;
     let stem = file.stem();
     match target {
@@ -294,7 +304,7 @@ fn jpeg_page(image: &DynamicImage) -> Result<JpegPage, String> {
 // Documentos
 // ---------------------------------------------------------------------------------------------
 
-fn convert_document(file: &FileInfo, target: &str, out_dir: &Path) -> Result<Vec<PathBuf>, String> {
+fn convert_document(file: &FileInfo, target: &str, out_dir: &Path, notes: &mut Vec<String>) -> Result<Vec<PathBuf>, String> {
     let stem = file.stem();
     // De texto plano a Markdown se copia tal cual: es lo más fiel.
     if target == "md" && matches!(file.kind, Kind::Text) {
@@ -342,7 +352,8 @@ fn convert_document(file: &FileInfo, target: &str, out_dir: &Path) -> Result<Vec
             Ok(vec![write_new(out_dir, &stem, "json", body.as_bytes())?])
         }
         _ => {
-            let document: Doc = incoming::doc_of(file)?;
+            let (document, note): (Doc, Option<String>) = incoming::doc_and_note(file)?;
+            notes.extend(note);
             let (ext, bytes) = match target {
                 "txt" => ("txt", doc::to_text(&document).into_bytes()),
                 "md" => ("md", doc::to_markdown(&document).into_bytes()),
@@ -480,9 +491,9 @@ pub fn convert(files: &[FileInfo], target: &str, out_dir: &Path) -> Result<Outco
         _ => {
             for file in files {
                 let result = match file.kind {
-                    Kind::Image => convert_image(file, target, out_dir).map(|path| vec![path]),
+                    Kind::Image => convert_image(file, target, out_dir, &mut outcome.notes).map(|path| vec![path]),
                     Kind::Zip | Kind::Folder | Kind::Other => Err(format!("no sé convertir «{}» a «{target}»", file.label())),
-                    _ => convert_document(file, target, out_dir),
+                    _ => convert_document(file, target, out_dir, &mut outcome.notes),
                 };
                 match result {
                     Ok(paths) => outcome.outputs.extend(paths),
@@ -717,5 +728,35 @@ mod tests {
 
         let md = std::fs::read_to_string(&convert(std::slice::from_ref(&file), "md", &out).unwrap().outputs[0]).unwrap();
         assert!(md.contains("Antes\n\n[imagen]\n\nDespués"), "{md:?}");
+    }
+
+    #[test]
+    fn el_ocr_convierte_una_imagen_y_un_pdf_escaneado_a_texto() {
+        if crate::ocr::tests::engine_or_skip().is_none() {
+            return;
+        }
+        let d = dir("ocr");
+        let out = d.join("salida");
+        let image = incoming::inspect(&[crate::ocr::tests::fixture()]).unwrap().remove(0);
+        let outcome = convert(std::slice::from_ref(&image), "ocr", &out).unwrap();
+        let text = std::fs::read_to_string(&outcome.outputs[0]).unwrap().to_lowercase();
+        assert!(text.contains("hola") && text.contains("mundo") && text.contains("4521"), "{text:?}");
+        assert!(outcome.notes[0].contains("OCR de Windows"));
+        assert_eq!(outcome.outputs[0].file_name().unwrap(), "ocr_texto.txt");
+
+        // Un PDF escaneado (sin capa de texto) se lee solo con el OCR al convertirlo.
+        let pdf_path = d.join("escaneo.pdf");
+        crate::ocr::tests::write_scanned_pdf(&pdf_path);
+        let pdf = incoming::inspect(&[pdf_path]).unwrap().remove(0);
+        let outcome = convert(std::slice::from_ref(&pdf), "txt", &out).unwrap();
+        let text = std::fs::read_to_string(&outcome.outputs[0]).unwrap().to_lowercase();
+        assert!(text.contains("hola") && text.contains("reconocimiento"), "{text:?}");
+        assert!(outcome.notes.iter().any(|n| n.contains("PDF escaneado")), "{:?}", outcome.notes);
+        let blank = put(&d, "vacia.png", &{
+            let mut bytes = Vec::new();
+            image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(500, 200, image::Rgb([255, 255, 255]))).write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png).unwrap();
+            bytes
+        });
+        assert!(convert(&[blank], "ocr", &out).unwrap_err().contains("no encontré texto"));
     }
 }
