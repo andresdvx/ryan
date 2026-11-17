@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Ryan - Archivo</title>
+  <link rel="stylesheet" href="filemenu.css">
+</head>
+<body>
+  <main id="menu" class="menu">
+    <header class="head">
+      <div id="fm-icon" class="icon" aria-hidden="true">📄</div>
+      <div class="who">
+        <div id="fm-name" class="name"></div>
+        <div id="fm-meta" class="meta"></div>
+      </div>
+      <button id="fm-close" class="close" type="button" title="Cerrar (Esc)" aria-label="Cerrar">&times;</button>
+    </header>
+
+    <section id="fm-main" class="body">
+      <div class="acts">
+        <button id="fm-analyze" class="act" type="button"><span class="emoji">🔍</span>Analizar</button>
+        <button id="fm-summarize" class="act" type="button"><span class="emoji">📝</span>Resumir</button>
+        <button id="fm-ask-toggle" class="act" type="button" aria-expanded="false"><span class="emoji">💬</span>Preguntar</button>
+      </div>
+      <form id="fm-ask" class="ask" autocomplete="off" hidden>
+        <input id="fm-q" type="text" maxlength="500" placeholder="¿Qué quieres saber de este archivo?" spellcheck="true" aria-label="Tu pregunta sobre el archivo">
+        <button class="send" type="submit">Enviar</button>
+      </form>
+      <p id="fm-note" class="note"></p>
+
+      <h4 id="fm-convert-title">🔄 Convertir a…</h4>
+      <div id="fm-convert" class="chips"></div>
+      <h4 id="fm-optimize-title">✨ Optimizar</h4>
+      <div id="fm-optimize" class="chips"></div>
+
+      <footer class="where">
+        <span class="where-label">Guardar en</span>
+        <button id="fm-dir" class="dir" type="button" title="Abrir la carpeta de salida"></button>
+        <button id="fm-dir-change" class="link" type="button">Cambiar…</button>
+        <button id="fm-dir-reset" class="link" type="button" hidden title="Volver al Escritorio">Escritorio</button>
+      </footer>
+    </section>
+
+    <section id="fm-status" class="status" role="status" aria-live="polite" hidden></section>
+
+    <section id="fm-done" class="done" hidden>
+      <div id="fm-done-title" class="done-title"></div>
+      <ul id="fm-done-list" class="done-list"></ul>
+      <p id="fm-done-notes" class="note"></p>
+      <p id="fm-done-failures" class="note error"></p>
+      <div class="done-actions">
+        <button id="fm-reveal" class="act small" type="button">📂 Mostrar</button>
+        <button id="fm-again" class="act small" type="button">↩ Otra cosa</button>
+        <button id="fm-done-close" class="act small" type="button">Listo</button>
+      </div>
+    </section>
+  </main>
+  <script src="filemenu.js"></script>
+</body>
+</html>

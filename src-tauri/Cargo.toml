@@ -18,3 +18,4 @@ keyring = { version = "3", features = ["windows-native"] }
 dirs = "7.0.0"
 tauri-plugin-autostart = "2.7.0"
 tauri-plugin-single-instance = "2.5.5"
+tauri-plugin-dialog = "2"

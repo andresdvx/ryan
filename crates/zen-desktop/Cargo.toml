@@ -6,13 +6,17 @@ edition = "2021"
 [dependencies]
 arboard = { version = "3.7.0", default-features = false }
 dirs = "7.0.0"
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
 ureq = "3.5.0"
 url = "2.5.8"
-windows = { version = "0.62.2", features = ["Media_Control", "Foundation", "Storage_Streams", "Win32_System_WinRT", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Accessibility", "Win32_Foundation"] }
+windows = { version = "0.62.2", features = ["Media_Control", "Media_Ocr", "Graphics_Imaging", "Data_Pdf", "Globalization", "Storage", "Foundation_Collections", "Foundation", "Storage_Streams", "Win32_System_WinRT", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Accessibility", "Win32_Foundation"] }
 windows-registry = "0.100.0"
 png = "0.18.1"
 base64 = "0.23.1"
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_Power", "Win32_System_SystemInformation", "Win32_Storage_FileSystem", "Win32_UI_WindowsAndMessaging", "Win32_System_Diagnostics_Debug", "Win32_Media_Audio", "Win32_System_Threading", "Win32_UI_Shell", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Storage_Xps"] }
 zen-core = { version = "0.1.0", path = "../zen-core" }
 zip = { version = "9.3.0", default-features = false, features = ["deflate"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff", "ico"] }
+pdf-extract = "0.12.1"
+calamine = "0.38.0"
+pulldown-cmark = "0.13.6"

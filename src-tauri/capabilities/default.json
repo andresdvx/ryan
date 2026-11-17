@@ -3,7 +3,8 @@
   "windows": [
     "main",
     "chat",
-    "quick"
+    "quick",
+    "filemenu"
   ],
   "permissions": [
     "core:default",
