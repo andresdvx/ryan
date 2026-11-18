@@ -43,6 +43,8 @@ pub fn on_event(state: State, event: &Event) -> State {
         (Thinking | Working | Alert, BatteryLow { .. } | RestSuggested { .. }) => state,
         (_, BatteryLow { .. } | RestSuggested { .. }) => Alert,
         (Idle | Walking | Sleeping, BatteryCharged | DownloadFinished { .. } | FileDropped { .. }) => Happy,
+        // Al empezar a arrastrar un archivo se pone atento, mirando al usuario.
+        (Idle | Walking | Sleeping, FileDragStarted) => Interacting,
         // Con música se alegra si está en reposo y se despierta si dormía; ocupada o paseando, no se interrumpe.
         (Idle, MusicStarted) => Happy,
         (Sleeping, MusicStarted) => Idle,

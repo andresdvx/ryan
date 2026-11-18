@@ -1,0 +1,46 @@
+:root {
+  color-scheme: dark;
+  --accent-rgb: 139 123 255;
+  --accent-2-rgb: 91 140 255;
+  --accent: rgb(var(--accent-rgb));
+  /* Los fondos se tiñen con el color del personaje, como en el chat y en la barra rápida. */
+  --bg: color-mix(in srgb, var(--accent) 8%, #1a1822);
+  --text: #f1eef6;
+  --muted: #b6b0c6;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; }
+body { padding: 8px; font: 14px/1.3 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--text); }
+
+/* La ventana es transparente: solo se ve la barra y las burbujitas que bajan hacia el personaje. */
+.wrap { display: flex; flex-direction: column; align-items: center; transform-origin: 50% 100%; animation: unfold 0.28s cubic-bezier(0.2, 1.25, 0.4, 1) both; }
+@keyframes unfold { from { opacity: 0; transform: translateY(18px) scale(0.85); } to { opacity: 1; transform: none; } }
+
+.bar {
+  display: flex; gap: 10px; padding: 14px; border: 2px solid rgb(var(--accent-rgb) / 0.6); border-radius: 26px; background: var(--bg);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55), 0 0 0 5px rgb(var(--accent-rgb) / 0.14);
+}
+
+.zone {
+  display: flex; width: 88px; height: 88px; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  border: 2px dashed rgb(var(--accent-rgb) / 0.55); border-radius: 18px; background: rgb(var(--accent-rgb) / 0.1);
+  animation: bob 1.8s ease-in-out infinite; transition: transform 0.14s, background 0.14s, border-color 0.14s, box-shadow 0.14s;
+}
+.zone:nth-child(2) { animation-delay: 0.25s; }
+.zone:nth-child(3) { animation-delay: 0.5s; }
+.emoji { font: 28px/1 "Segoe UI Emoji", sans-serif; }
+.label { font-size: 13px; font-weight: 700; color: var(--muted); transition: color 0.14s; }
+@keyframes bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 -3px; } }
+
+/* La zona que tiene el archivo encima: se agranda, se enciende y se ve que ahí se suelta. */
+.zone.hot {
+  animation: none; transform: scale(1.12); border-style: solid; border-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.34); box-shadow: 0 0 0 4px rgb(var(--accent-rgb) / 0.22), 0 8px 22px rgb(var(--accent-rgb) / 0.4);
+}
+.zone.hot .label { color: #fff; }
+
+/* Las burbujitas que unen la barra con el personaje, como un pensamiento. */
+.tail { position: relative; width: 100%; height: 44px; }
+.dot { position: absolute; left: 50%; border-radius: 50%; border: 2px solid rgb(var(--accent-rgb) / 0.6); background: var(--bg); translate: -50% 0; }
+.dot.big { top: 6px; width: 20px; height: 20px; }
+.dot.small { top: 30px; width: 11px; height: 11px; }

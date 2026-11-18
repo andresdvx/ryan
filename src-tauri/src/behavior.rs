@@ -24,6 +24,8 @@ pub struct BehaviorFlags {
     walking: AtomicBool,
     sleeping: AtomicBool,
     chat_open: AtomicBool,
+    /// Se está arrastrando un archivo: la barra de soltar está sobre el personaje y no debe moverse.
+    dragging: AtomicBool,
 }
 
 impl BehaviorFlags {
@@ -34,6 +36,7 @@ impl BehaviorFlags {
             walking: AtomicBool::new(false),
             sleeping: AtomicBool::new(false),
             chat_open: AtomicBool::new(false),
+            dragging: AtomicBool::new(false),
         }
     }
 }
@@ -74,6 +77,8 @@ fn spawn_director(
                     match event {
                         Event::ChatOpened => flags.chat_open.store(true, Ordering::Relaxed),
                         Event::ChatClosed => flags.chat_open.store(false, Ordering::Relaxed),
+                        Event::FileDragStarted => flags.dragging.store(true, Ordering::Relaxed),
+                        Event::FileDragEnded => flags.dragging.store(false, Ordering::Relaxed),
                         _ => {}
                     }
                     let changed = character.handle(&event, now);
@@ -86,7 +91,7 @@ fn spawn_director(
                     let changed = character.tick(now);
                     if changed.is_none() {
                         // Con el chat abierto no pasea: la ventana del chat no la seguiría.
-                        let enabled = flags.wander.load(Ordering::Relaxed) && !flags.chat_open.load(Ordering::Relaxed);
+                        let enabled = flags.wander.load(Ordering::Relaxed) && !flags.chat_open.load(Ordering::Relaxed) && !flags.dragging.load(Ordering::Relaxed);
                         if let Some(event) = wander.poll(character.state(), now, enabled) {
                             bus.publish(event);
                         }

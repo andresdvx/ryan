@@ -163,9 +163,19 @@ pub fn undo_for(locations: &Locations, report: &ToolReport) -> Option<Undo> {
         "remember" => Some(Undo { tool: "forget".into(), args: json!({ "id": report.data["id"].as_u64()? }), label: "Olvidar este recuerdo".into() }),
         "add_task" => Some(Undo { tool: "delete_task".into(), args: json!({ "id": report.data["id"].as_u64()? }), label: "Quitar esta tarea".into() }),
         "complete_task" => {
-            let done = report.data["done"].as_bool()?;
-            let label = if done { "Volver a abrir esta tarea" } else { "Volver a marcarla como hecha" };
-            Some(Undo { tool: "complete_task".into(), args: json!({ "id": report.data["id"].as_u64()?, "done": !done }), label: label.into() })
+            // Se vuelve al estado que tenía antes (pendiente, parcial o hecha); los archivos del registro anteriores a
+            // «parcial» solo dicen si quedó hecha o no.
+            let previous = match report.data["previous"].as_str() {
+                Some(previous) => previous,
+                None if report.data["done"].as_bool()? => "pending",
+                None => "done",
+            };
+            let label = match previous {
+                "pending" => "Volver a dejarla pendiente",
+                "partial" => "Volver a dejarla como parcial",
+                _ => "Volver a marcarla como hecha",
+            };
+            Some(Undo { tool: "complete_task".into(), args: json!({ "id": report.data["id"].as_u64()?, "status": previous }), label: label.into() })
         }
         _ => None,
     }
@@ -416,6 +426,15 @@ mod tests {
         assert!(undo_for(l, &report("organize_folder", json!({}), json!({ "undo_available": false }))).is_none());
         assert_eq!(undo_for(l, &report("set_reminder", json!({}), json!({ "id": 7 }))).unwrap().args, json!({ "id": 7 }));
         assert_eq!(undo_for(l, &report("remember", json!({}), json!({ "id": 4 }))).unwrap().tool, "forget");
+        // Marcar una tarea: se vuelve al estado de antes (pendiente, parcial o hecha); un registro anterior a «parcial» solo dice «done».
+        let was_pending = undo_for(l, &report("complete_task", json!({}), json!({ "id": 3, "status": "partial", "previous": "pending", "done": false }))).unwrap();
+        assert_eq!((was_pending.tool.as_str(), was_pending.args, was_pending.label.as_str()), ("complete_task", json!({ "id": 3, "status": "pending" }), "Volver a dejarla pendiente"));
+        let was_partial = undo_for(l, &report("complete_task", json!({}), json!({ "id": 3, "status": "done", "previous": "partial", "done": true }))).unwrap();
+        assert_eq!((was_partial.args, was_partial.label.as_str()), (json!({ "id": 3, "status": "partial" }), "Volver a dejarla como parcial"));
+        let was_done = undo_for(l, &report("complete_task", json!({}), json!({ "id": 3, "status": "partial", "previous": "done" }))).unwrap();
+        assert_eq!(was_done.args, json!({ "id": 3, "status": "done" }));
+        let legacy = undo_for(l, &report("complete_task", json!({}), json!({ "id": 3, "done": true }))).unwrap();
+        assert_eq!(legacy.args, json!({ "id": 3, "status": "pending" }), "sin «previous»: lo hecho se deshace dejándola pendiente");
     }
 
     #[test]

@@ -759,7 +759,7 @@ fn tasks_store(app: &AppHandle) -> Result<Arc<zen_desktop::Tasks>, String> {
 #[tauri::command]
 fn list_tasks(app: AppHandle) -> Value {
     let items = app.try_state::<Arc<zen_desktop::Tasks>>().map(|tasks| tasks.list()).unwrap_or_default();
-    let items: Vec<Value> = items.iter().map(|t| json!({ "id": t.id, "text": t.text, "done": t.done })).collect();
+    let items: Vec<Value> = items.iter().map(|t| json!({ "id": t.id, "text": t.text, "done": t.done, "partial": t.partial, "status": t.status().key(), "note": t.note })).collect();
     json!({ "items": items })
 }
 
@@ -771,6 +771,13 @@ fn add_task(app: AppHandle, text: String) -> Result<(), String> {
 #[tauri::command]
 fn set_task_done(app: AppHandle, id: u64, done: bool) -> Result<(), String> {
     tasks_store(&app)?.set_done(id, done).map(|_| ()).ok_or_else(|| "Esa tarea ya no existe.".to_string())
+}
+
+/// Cambia el estado de una tarea: `done`, `partial` (con una nota opcional de lo que falta) o `pending`.
+#[tauri::command]
+fn set_task_status(app: AppHandle, id: u64, status: String, note: Option<String>) -> Result<(), String> {
+    let status = zen_desktop::TaskStatus::from_key(&status).ok_or("Estado de tarea desconocido.")?;
+    tasks_store(&app)?.set_status(id, status, note.as_deref())?.map(|_| ()).ok_or_else(|| "Esa tarea ya no existe.".to_string())
 }
 
 #[tauri::command]
@@ -1313,6 +1320,7 @@ fn main() {
             open_recycle_bin,
             hide_quick_cmd,
             resize_quick,
+            filedrop::dropbar_choose,
             filedrop::file_menu_state,
             filedrop::file_menu_close,
             filedrop::file_menu_resize,
@@ -1341,6 +1349,7 @@ fn main() {
             list_tasks,
             add_task,
             set_task_done,
+            set_task_status,
             delete_task,
             clear_done_tasks,
             resolve_confirmation,
@@ -1442,6 +1451,7 @@ fn main() {
             media::spawn(app.handle().clone());
             music::spawn(app.handle().clone());
             filedrop::attach(app.handle());
+            filedrop::spawn_watch(app.handle().clone());
             notify::spawn(app.handle().clone());
             power::spawn(app.handle().clone());
             usage::spawn(app.handle().clone());
