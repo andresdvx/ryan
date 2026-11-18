@@ -59,7 +59,7 @@ pub use file_tools::reveal_in_explorer;
 pub use locations::{display_path, Location, Locations, Placed};
 pub use memory::Memory;
 pub use reminders::{Reminders, MAX_PENDING as MAX_REMINDERS};
-pub use tasks::Tasks;
+pub use tasks::{Status as TaskStatus, Tasks};
 pub use screen_tools::{capturable_windows, capture_for_user, UserCapture};
 pub use system_tools::system_status;
 pub use web_tools::open_url;

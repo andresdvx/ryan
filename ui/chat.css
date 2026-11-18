@@ -401,6 +401,24 @@ body[data-mood="sleepy"] .badge img { animation-duration: 6s; filter: saturate(0
 }
 .task input[type="checkbox"] { width: 18px; height: 18px; margin: 0; cursor: pointer; accent-color: var(--accent); }
 .task .text { overflow-wrap: anywhere; }
+/* Una tarea parcial (empezada, sin terminar): borde ámbar y el botón ◐ encendido; la nota dice qué falta. */
+.task { grid-template-columns: auto 1fr auto auto; }
+.task.partial { border-color: rgba(240, 180, 70, 0.55); box-shadow: inset 3px 0 0 rgba(240, 180, 70, 0.85); }
+.field .task .half {
+  width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--muted);
+  font-size: 16px; line-height: 1; cursor: pointer;
+}
+.field .task .half:hover:not(:disabled) { color: #f0b446; background: rgba(240, 180, 70, 0.14); filter: none; transform: none; }
+.field .task .half[aria-pressed="true"] { color: #1a1822; background: #f0b446; border-color: #f0b446; }
+.task .note-link {
+  grid-column: 2 / -1; margin-top: 4px; padding: 0; border: 0; background: none; color: #f0c870; font: inherit; font-size: 12.5px;
+  text-align: left; overflow-wrap: anywhere; cursor: pointer;
+}
+.task .note-link.empty { color: var(--muted); font-style: italic; }
+.task .note-link:hover { text-decoration: underline; }
+.task-note-edit { grid-column: 2 / -1; display: flex; gap: 6px; margin-top: 6px; }
+.task-note-edit input { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid rgba(240, 180, 70, 0.6); border-radius: 10px; background: var(--bg); color: inherit; font: inherit; font-size: 13px; outline: none; }
+.task-note-edit button { padding: 0 12px; border: 0; border-radius: 10px; background: #f0b446; color: #1a1822; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .task.done .text { color: var(--muted); text-decoration: line-through; }
 .field .task .cancel {
   width: 28px; height: 28px; padding: 0; border-radius: 8px; background: none; color: var(--muted); line-height: 1;

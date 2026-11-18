@@ -1,5 +1,6 @@
 //! Lista de tareas pendientes («R38838 - ESE», «llamar al dentista»). Se guarda en disco, sobrevive a cerrar la
-//! aplicación y se maneja con cuatro herramientas: agregar, listar, marcar como hecha (o volver a abrirla) y borrar.
+//! aplicación y se maneja con cuatro herramientas: agregar, listar, marcar (como hecha, como **parcial** —empezada pero
+//! sin terminar, con una nota de lo que falta— o de nuevo como pendiente) y borrar.
 //! A diferencia de un recordatorio no tiene hora: es una lista para ir tachando.
 
 use std::path::PathBuf;
@@ -13,11 +14,71 @@ use crate::args::{check_keys, invalid, optional_str, optional_u64, required_str}
 pub const MAX_TASKS: usize = 100;
 const MAX_TEXT_CHARS: usize = 200;
 
+/// En qué punto está una tarea. Una parcial sigue contando como pendiente: aún queda trabajo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    Pending,
+    Partial,
+    Done,
+}
+
+impl Status {
+    pub fn key(self) -> &'static str {
+        match self {
+            Status::Pending => "pending",
+            Status::Partial => "partial",
+            Status::Done => "done",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "pending" => Some(Status::Pending),
+            "partial" => Some(Status::Partial),
+            "done" => Some(Status::Done),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
     pub id: u64,
     pub text: String,
     pub done: bool,
+    /// Empezada pero sin terminar (nunca a la vez que `done`).
+    pub partial: bool,
+    /// Qué falta (o qué se hizo), solo en las parciales.
+    pub note: Option<String>,
+}
+
+impl Task {
+    pub fn status(&self) -> Status {
+        if self.done {
+            Status::Done
+        } else if self.partial {
+            Status::Partial
+        } else {
+            Status::Pending
+        }
+    }
+}
+
+const MAX_NOTE_CHARS: usize = 200;
+
+/// Nota de una tarea parcial: texto de una línea o nada.
+fn clean_note(note: &str) -> Result<Option<String>, String> {
+    let note = note.split_whitespace().collect::<Vec<_>>().join(" ");
+    if note.is_empty() {
+        return Ok(None);
+    }
+    if note.chars().count() > MAX_NOTE_CHARS {
+        return Err(format!("la nota debe tener como mucho {MAX_NOTE_CHARS} caracteres"));
+    }
+    if note.chars().any(char::is_control) {
+        return Err("la nota no puede tener caracteres de control".into());
+    }
+    Ok(Some(note))
 }
 
 #[derive(Default)]
@@ -58,7 +119,10 @@ impl Tasks {
             .iter()
             .filter_map(|item| {
                 let text = clean_text(item["text"].as_str()?).ok()?;
-                Some(Task { id: item["id"].as_u64()?, text, done: item["done"].as_bool().unwrap_or(false) })
+                let done = item["done"].as_bool().unwrap_or(false);
+                let partial = !done && item["partial"].as_bool().unwrap_or(false);
+                let note = if partial { item["note"].as_str().and_then(|note| clean_note(note).ok().flatten()) } else { None };
+                Some(Task { id: item["id"].as_u64()?, text, done, partial, note })
             })
             .take(MAX_TASKS)
             .collect();
@@ -67,7 +131,7 @@ impl Tasks {
     }
 
     fn save(&self, state: &State) -> Result<(), String> {
-        let items: Vec<Value> = state.items.iter().map(|t| json!({ "id": t.id, "text": t.text, "done": t.done })).collect();
+        let items: Vec<Value> = state.items.iter().map(|t| json!({ "id": t.id, "text": t.text, "done": t.done, "partial": t.partial, "note": t.note })).collect();
         let body = serde_json::to_string_pretty(&json!({ "next_id": state.next_id, "items": items })).map_err(|e| e.to_string())?;
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| format!("no se pudo crear la carpeta de datos: {e}"))?;
@@ -92,7 +156,7 @@ impl Tasks {
             state.items.remove(oldest_done);
         }
         state.next_id = state.next_id.max(1);
-        let task = Task { id: state.next_id, text, done: false };
+        let task = Task { id: state.next_id, text, done: false, partial: false, note: None };
         state.next_id += 1;
         state.items.push(task.clone());
         self.save(&state)?;
@@ -104,18 +168,32 @@ impl Tasks {
         self.state.lock().expect("tareas envenenado").items.clone()
     }
 
+    /// Lo que aún queda por hacer: las pendientes y las parciales.
     pub fn pending_count(&self) -> usize {
         self.list().iter().filter(|t| !t.done).count()
     }
 
-    /// Marca (o desmarca) una tarea. Devuelve la tarea ya cambiada.
+    pub fn partial_count(&self) -> usize {
+        self.list().iter().filter(|t| t.partial).count()
+    }
+
+    /// Marca (o desmarca) una tarea como hecha. Devuelve la tarea ya cambiada.
     pub fn set_done(&self, id: u64, done: bool) -> Option<Task> {
+        self.set_status(id, if done { Status::Done } else { Status::Pending }, None).ok().flatten()
+    }
+
+    /// Cambia el estado de una tarea. `note` solo vale para una parcial (qué falta): sin nota se conserva la que ya
+    /// tuviera; al pasar a hecha o a pendiente la nota se borra. `Ok(None)` si la tarea no existe.
+    pub fn set_status(&self, id: u64, status: Status, note: Option<&str>) -> Result<Option<Task>, String> {
+        let note = note.map(clean_note).transpose()?.flatten();
         let mut state = self.state.lock().expect("tareas envenenado");
-        let task = state.items.iter_mut().find(|t| t.id == id)?;
-        task.done = done;
+        let Some(task) = state.items.iter_mut().find(|t| t.id == id) else { return Ok(None) };
+        task.done = status == Status::Done;
+        task.partial = status == Status::Partial;
+        task.note = if task.partial { note.or_else(|| task.note.take()) } else { None };
         let task = task.clone();
         let _ = self.save(&state);
-        Some(task)
+        Ok(Some(task))
     }
 
     pub fn remove(&self, id: u64) -> Option<Task> {
@@ -138,9 +216,9 @@ impl Tasks {
         removed
     }
 
-    /// Busca una tarea por su número o por parte de su texto (sin distinguir mayúsculas). Con el texto prefiere las
-    /// pendientes que cumplan `prefer_done == false`; error si no hay ninguna o hay varias que encajan.
-    fn find(&self, id: Option<u64>, text: Option<&str>, only_done: Option<bool>) -> Result<Task, String> {
+    /// Busca una tarea por su número o por parte de su texto (sin distinguir mayúsculas). Con el texto solo mira las
+    /// que cumplen `wanted`; error si no hay ninguna o hay varias que encajan.
+    fn find(&self, id: Option<u64>, text: Option<&str>, wanted: impl Fn(&Task) -> bool) -> Result<Task, String> {
         let items = self.list();
         match (id, text) {
             (Some(id), None) => items.into_iter().find(|t| t.id == id).ok_or_else(|| format!("no hay ninguna tarea con el número {id}")),
@@ -149,7 +227,7 @@ impl Tasks {
                 if query.is_empty() {
                     return Err("indica qué tarea".into());
                 }
-                let candidates: Vec<&Task> = items.iter().filter(|t| only_done.is_none_or(|done| t.done == done)).collect();
+                let candidates: Vec<&Task> = items.iter().filter(|t| wanted(t)).collect();
                 // Una coincidencia exacta gana a las parciales: «R38» no confunde «R38838 - ESE» con «R38999».
                 let exact: Vec<&&Task> = candidates.iter().filter(|t| t.text.to_lowercase() == query).collect();
                 let matches: Vec<&Task> = match exact.as_slice() {
@@ -182,16 +260,41 @@ fn target_args(args: &Value, extra: &[&str]) -> Result<(Option<u64>, Option<Stri
     Ok((id, text))
 }
 
-fn done_flag(args: &Value) -> Result<bool, ToolError> {
-    match args.get("done") {
-        None | Some(Value::Null) => Ok(true),
-        Some(Value::Bool(done)) => Ok(*done),
-        Some(_) => Err(invalid("«done» debe ser verdadero o falso")),
+/// A qué estado se pasa la tarea: «status» (hecha por defecto) o, por compatibilidad, «done» (false = pendiente).
+fn status_arg(args: &Value) -> Result<Status, ToolError> {
+    let status = optional_str(args, "status")?;
+    let done = match args.get("done") {
+        None | Some(Value::Null) => None,
+        Some(Value::Bool(done)) => Some(*done),
+        Some(_) => return Err(invalid("«done» debe ser verdadero o falso")),
+    };
+    match (status, done) {
+        (Some(_), Some(_)) => Err(invalid("usa «status» o «done», no los dos")),
+        (Some(key), None) => Status::from_key(key).ok_or_else(|| invalid("«status» debe ser done, partial o pending")),
+        (None, Some(false)) => Ok(Status::Pending),
+        (None, _) => Ok(Status::Done),
     }
 }
 
+/// La nota que acompaña al estado: solo tiene sentido en una parcial.
+fn note_arg(args: &Value, status: Status) -> Result<Option<String>, ToolError> {
+    let Some(note) = optional_str(args, "note")? else { return Ok(None) };
+    if status != Status::Partial {
+        return Err(invalid("«note» solo se usa con status partial"));
+    }
+    clean_note(note).map_err(invalid)
+}
+
 fn describe(task: &Task) -> String {
-    format!("{} #{} {}", if task.done { "✔" } else { "○" }, task.id, task.text)
+    let mark = match task.status() {
+        Status::Done => "✔",
+        Status::Partial => "◐",
+        Status::Pending => "○",
+    };
+    match &task.note {
+        Some(note) => format!("{mark} #{} {} — {note}", task.id, task.text),
+        None => format!("{mark} #{} {}", task.id, task.text),
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -254,9 +357,10 @@ impl Tool for ListTasks {
     }
 
     fn description(&self) -> &'static str {
-        "Lista las tareas del usuario con su número y si están hechas (✔) o pendientes (○). Por defecto muestra las \
-         pendientes y las hechas; con «only_pending» solo las pendientes. Úsala antes de marcar o borrar una tarea \
-         si no estás seguro de cuál es."
+        "Lista las tareas del usuario con su número y su estado: hechas (✔), parciales (◐, empezadas pero sin \
+         terminar, con una nota de lo que falta) o pendientes (○). Por defecto muestra todas; con «only_pending» \
+         solo lo que aún queda (pendientes y parciales). Úsala antes de marcar o borrar una tarea si no estás seguro \
+         de cuál es."
     }
 
     fn parameters(&self) -> Value {
@@ -292,11 +396,13 @@ impl Tool for ListTasks {
             let summary = if all.is_empty() { "No tienes tareas." } else { "No tienes tareas pendientes." };
             return Ok(ToolOutput { summary: summary.into(), data: json!({ "tasks": [], "pending": pending }) });
         }
-        let mut summary = format!("Tienes {pending} tarea(s) pendiente(s) de {}:", all.len());
+        let partial = all.iter().filter(|t| t.partial).count();
+        let extra = if partial > 0 { format!(", {partial} parcial(es)") } else { String::new() };
+        let mut summary = format!("Tienes {pending} tarea(s) pendiente(s) de {}{extra}:", all.len());
         for task in &items {
             summary.push_str(&format!("\n{}", describe(task)));
         }
-        let data: Vec<Value> = items.iter().map(|t| json!({ "id": t.id, "text": t.text, "done": t.done })).collect();
+        let data: Vec<Value> = items.iter().map(|t| json!({ "id": t.id, "text": t.text, "done": t.done, "partial": t.partial, "status": t.status().key(), "note": t.note })).collect();
         Ok(ToolOutput { summary, data: json!({ "tasks": data, "pending": pending }) })
     }
 }
@@ -309,9 +415,10 @@ impl Tool for CompleteTask {
     }
 
     fn description(&self) -> &'static str {
-        "Marca una tarea como hecha (o, con done=false, la vuelve a abrir). Indica su número («id», el que muestra \
-         list_tasks) o parte de su texto («text», por ejemplo «R38838»). Si el texto coincide con varias, pide al \
-         usuario cuál o usa el número."
+        "Cambia el estado de una tarea: hecha (status=done, por defecto), PARCIAL (status=partial: se avanzó pero no \
+         está terminada; añade en «note» qué falta o qué se hizo) o de nuevo pendiente (status=pending). Indica su \
+         número («id», el que muestra list_tasks) o parte de su texto («text», por ejemplo «R38838»). Si el texto \
+         coincide con varias, pide al usuario cuál o usa el número."
     }
 
     fn parameters(&self) -> Value {
@@ -320,7 +427,9 @@ impl Tool for CompleteTask {
             "properties": {
                 "id": { "type": "integer", "minimum": 1, "description": "Número de la tarea." },
                 "text": { "type": "string", "description": "Parte del texto de la tarea (alternativa al número)." },
-                "done": { "type": "boolean", "description": "true (por defecto) la marca como hecha; false la vuelve a dejar pendiente." }
+                "status": { "type": "string", "enum": ["done", "partial", "pending"], "description": "done (por defecto): terminada; partial: terminada solo en parte; pending: sin empezar." },
+                "note": { "type": "string", "description": format!("Solo con partial: qué falta o qué se hizo (hasta {MAX_NOTE_CHARS} caracteres).") },
+                "done": { "type": "boolean", "description": "Alternativa antigua a status: false la vuelve a dejar pendiente." }
             }
         })
     }
@@ -330,38 +439,60 @@ impl Tool for CompleteTask {
     }
 
     fn validate(&self, args: &Value) -> Result<(), ToolError> {
-        target_args(args, &["done"])?;
-        done_flag(args).map(|_| ())
+        target_args(args, &["status", "note", "done"])?;
+        let status = status_arg(args)?;
+        note_arg(args, status).map(|_| ())
     }
 
     fn preview(&self, args: &Value) -> String {
-        let done = done_flag(args).unwrap_or(true);
+        let status = status_arg(args).unwrap_or(Status::Done);
+        let action = match status {
+            Status::Done => "Marcar como hecha",
+            Status::Partial => "Marcar como parcial",
+            Status::Pending => "Volver a dejar pendiente",
+        };
         match self.resolve(args) {
-            Ok(task) => format!("{} «{}»", if done { "Marcar como hecha" } else { "Volver a abrir" }, task.text),
+            Ok(task) => format!("{action} «{}»", task.text),
             Err(error) => error.to_string(),
         }
     }
 
     fn execute(&self, args: &Value) -> Result<ToolOutput, ToolError> {
-        let done = done_flag(args)?;
+        let status = status_arg(args)?;
+        let note = note_arg(args, status)?;
         let task = self.resolve(args)?;
-        let changed = self.0.set_done(task.id, done).ok_or_else(|| ToolError::Failed(format!("No existe la tarea #{}.", task.id)))?;
+        let previous = task.status();
+        let changed = self
+            .0
+            .set_status(task.id, status, note.as_deref())
+            .map_err(ToolError::Failed)?
+            .ok_or_else(|| ToolError::Failed(format!("No existe la tarea #{}.", task.id)))?;
         let pending = self.0.pending_count();
-        let summary = if done {
-            format!("Marqué como hecha «{}». Te quedan {pending} pendiente(s).", changed.text)
-        } else {
-            format!("Volví a abrir «{}». Tienes {pending} pendiente(s).", changed.text)
+        let summary = match status {
+            Status::Done => format!("Marqué como hecha «{}». Te quedan {pending} pendiente(s).", changed.text),
+            Status::Partial => match &changed.note {
+                Some(note) => format!("Marqué como parcial «{}» (falta: {note}). Tienes {pending} pendiente(s).", changed.text),
+                None => format!("Marqué como parcial «{}». Tienes {pending} pendiente(s).", changed.text),
+            },
+            Status::Pending => format!("Volví a dejar pendiente «{}». Tienes {pending} pendiente(s).", changed.text),
         };
-        Ok(ToolOutput { summary, data: json!({ "id": changed.id, "text": changed.text, "done": changed.done, "pending": pending }) })
+        Ok(ToolOutput {
+            summary,
+            data: json!({
+                "id": changed.id, "text": changed.text, "done": changed.done, "partial": changed.partial,
+                "status": status.key(), "previous": previous.key(), "note": changed.note, "pending": pending
+            }),
+        })
     }
 }
 
 impl CompleteTask {
     fn resolve(&self, args: &Value) -> Result<Task, ToolError> {
-        let (id, text) = target_args(args, &["done"])?;
-        let done = done_flag(args)?;
-        // Al marcar como hecha se busca entre las pendientes; al reabrir, entre las hechas.
-        self.0.find(id, text.as_deref(), Some(!done)).map_err(ToolError::Failed)
+        let (id, text) = target_args(args, &["status", "note", "done"])?;
+        // Al marcar como hecha o como parcial se busca entre lo que aún queda; al volver a pendiente, entre lo ya
+        // avanzado (hechas y parciales).
+        let status = status_arg(args)?;
+        self.0.find(id, text.as_deref(), |task| if status == Status::Pending { task.done || task.partial } else { !task.done }).map_err(ToolError::Failed)
     }
 }
 
@@ -370,7 +501,7 @@ pub struct DeleteTask(pub Arc<Tasks>);
 impl DeleteTask {
     fn resolve(&self, args: &Value) -> Result<Task, ToolError> {
         let (id, text) = target_args(args, &[])?;
-        self.0.find(id, text.as_deref(), None).map_err(ToolError::Failed)
+        self.0.find(id, text.as_deref(), |_| true).map_err(ToolError::Failed)
     }
 }
 
@@ -478,13 +609,13 @@ mod tests {
         tasks.add("R38838 - ESE").unwrap();
         tasks.add("R38999 - OTRO").unwrap();
         tasks.add("R38").unwrap();
-        assert_eq!(tasks.find(None, Some("r38838"), None).unwrap().id, 1);
-        assert_eq!(tasks.find(None, Some("R38"), None).unwrap().id, 3, "la coincidencia exacta gana a las parciales");
-        assert!(tasks.find(None, Some("R3"), None).unwrap_err().contains("varias"));
-        assert!(tasks.find(None, Some("zzz"), None).unwrap_err().contains("no encuentro"));
-        assert!(tasks.find(None, Some("  "), None).is_err());
-        assert!(tasks.find(Some(9), None, None).is_err());
-        assert!(tasks.find(Some(1), Some("x"), None).is_err());
+        assert_eq!(tasks.find(None, Some("r38838"), |_| true).unwrap().id, 1);
+        assert_eq!(tasks.find(None, Some("R38"), |_| true).unwrap().id, 3, "la coincidencia exacta gana a las parciales");
+        assert!(tasks.find(None, Some("R3"), |_| true).unwrap_err().contains("varias"));
+        assert!(tasks.find(None, Some("zzz"), |_| true).unwrap_err().contains("no encuentro"));
+        assert!(tasks.find(None, Some("  "), |_| true).is_err());
+        assert!(tasks.find(Some(9), None, |_| true).is_err());
+        assert!(tasks.find(Some(1), Some("x"), |_| true).is_err());
     }
 
     #[test]
@@ -508,7 +639,7 @@ mod tests {
         // …no se vuelve a marcar una ya hecha (no está entre las pendientes)…
         assert!(matches!(complete.execute(&json!({ "text": "R38838" })), Err(ToolError::Failed(m)) if m.contains("no encuentro")));
         // …pero sí se puede reabrir.
-        assert!(complete.execute(&json!({ "id": 1, "done": false })).unwrap().summary.contains("Volví a abrir"));
+        assert!(complete.execute(&json!({ "id": 1, "done": false })).unwrap().summary.contains("Volví a dejar pendiente"));
         complete.execute(&json!({ "id": 1 })).unwrap();
 
         let pending = list.execute(&json!({ "only_pending": true })).unwrap();
@@ -529,7 +660,10 @@ mod tests {
         for bad in [json!({}), json!({ "text": "" }), json!({ "text": 5 }), json!({ "text": "x", "otro": 1 })] {
             assert!(add.validate(&bad).is_err(), "{bad}");
         }
-        for bad in [json!({}), json!({ "id": 1, "text": "x" }), json!({ "id": 0 }), json!({ "id": "1" }), json!({ "id": 1, "done": "sí" }), json!({ "id": 1, "x": 1 })] {
+        for bad in [json!({}), json!({ "id": 1, "text": "x" }), json!({ "id": 0 }), json!({ "id": "1" }), json!({ "id": 1, "done": "sí" }), json!({ "id": 1, "x": 1 }),
+            json!({ "id": 1, "status": "mitad" }), json!({ "id": 1, "status": "done", "note": "falta algo" }), json!({ "id": 1, "status": "partial", "done": false }),
+            json!({ "id": 1, "status": "partial", "note": 5 }), json!({ "id": 1, "status": "partial", "note": "x".repeat(MAX_NOTE_CHARS + 1) }),
+        ] {
             assert!(complete.validate(&bad).is_err(), "{bad}");
         }
         assert!(delete.validate(&json!({})).is_err() && delete.validate(&json!({ "id": 1, "text": "x" })).is_err());
@@ -553,5 +687,98 @@ mod tests {
         let tasks = store(&t);
         assert_eq!(tasks.list().iter().map(|x| (x.id, x.done)).collect::<Vec<_>>(), [(7, true), (11, false)]);
         assert_eq!(tasks.add("nueva").unwrap().id, 12, "el siguiente número supera a los existentes");
+    }
+
+    #[test]
+    fn una_tarea_parcial_sigue_pendiente_y_guarda_su_nota() {
+        let t = temp_locations();
+        let tasks = store(&t);
+        tasks.add("R38838 - ESE").unwrap();
+        tasks.add("Enviar informe").unwrap();
+        tasks.add("Llamar al dentista").unwrap();
+
+        let partial = tasks.set_status(1, Status::Partial, Some("  falta   la firma ")).unwrap().unwrap();
+        assert_eq!((partial.done, partial.partial, partial.note.as_deref(), partial.status()), (false, true, Some("falta la firma"), Status::Partial));
+        assert_eq!((tasks.pending_count(), tasks.partial_count()), (3, 1), "una parcial aún cuenta como pendiente");
+        assert!(tasks.add("r38838 - ese").unwrap_err().contains("ya tienes pendiente"), "una parcial no se puede repetir");
+
+        // Sin nota nueva se conserva la anterior; con nota nueva se reemplaza.
+        assert_eq!(tasks.set_status(1, Status::Partial, None).unwrap().unwrap().note.as_deref(), Some("falta la firma"));
+        assert_eq!(tasks.set_status(1, Status::Partial, Some("falta enviarla")).unwrap().unwrap().note.as_deref(), Some("falta enviarla"));
+        // «Quitar las hechas» no toca las parciales.
+        tasks.set_done(2, true).unwrap();
+        assert_eq!(tasks.clear_done(), 1);
+        assert!(tasks.list().iter().any(|x| x.id == 1 && x.partial));
+
+        // Terminarla o reabrirla borra la nota.
+        let done = tasks.set_status(1, Status::Done, None).unwrap().unwrap();
+        assert_eq!((done.done, done.partial, done.note), (true, false, None));
+        tasks.set_status(1, Status::Partial, Some("otra vez")).unwrap();
+        let pending = tasks.set_status(1, Status::Pending, None).unwrap().unwrap();
+        assert_eq!((pending.done, pending.partial, pending.note), (false, false, None));
+        assert!(tasks.set_status(99, Status::Partial, None).unwrap().is_none());
+        assert!(tasks.set_status(1, Status::Partial, Some(&"x".repeat(MAX_NOTE_CHARS + 1))).is_err());
+        assert!(tasks.set_status(1, Status::Partial, Some("con\u{7}control")).is_err());
+    }
+
+    #[test]
+    fn el_estado_parcial_sobrevive_a_cerrar_y_abrir_y_los_archivos_antiguos_se_leen() {
+        let t = temp_locations();
+        {
+            let tasks = store(&t);
+            tasks.add("Informe").unwrap();
+            tasks.add("Factura").unwrap();
+            tasks.set_status(1, Status::Partial, Some("falta el anexo")).unwrap();
+            tasks.set_done(2, true).unwrap();
+        }
+        let reopened = store(&t);
+        let items = reopened.list();
+        assert_eq!((items[0].status(), items[0].note.as_deref()), (Status::Partial, Some("falta el anexo")));
+        assert_eq!((items[1].status(), items[1].note.as_deref()), (Status::Done, None));
+        // Un archivo guardado antes de existir «parcial» (sin esos campos) sigue funcionando, y los datos raros se sanean.
+        let path = t.locations_root("data").join("tasks.json");
+        let old = json!({ "next_id": 5, "items": [
+            { "id": 1, "text": "antigua", "done": false },
+            { "id": 2, "text": "hecha y parcial a la vez", "done": true, "partial": true, "note": "no debe quedar" },
+            { "id": 3, "text": "nota rara", "done": false, "partial": true, "note": 7 },
+            { "id": 4, "text": "nota en pendiente", "done": false, "partial": false, "note": "se descarta" }
+        ]});
+        std::fs::write(&path, old.to_string()).unwrap();
+        let tasks = store(&t);
+        let loaded = tasks.list();
+        assert_eq!(loaded.iter().map(Task::status).collect::<Vec<_>>(), [Status::Pending, Status::Done, Status::Partial, Status::Pending]);
+        assert!(loaded.iter().all(|x| x.note.is_none()), "la nota solo vive en las parciales y debe ser texto");
+    }
+
+    #[test]
+    fn la_herramienta_marca_parcial_lista_y_deja_deshacer() {
+        let t = temp_locations();
+        let tasks = store(&t);
+        let (add, list, complete) = (AddTask(tasks.clone()), ListTasks(tasks.clone()), CompleteTask(tasks.clone()));
+        add.execute(&json!({ "text": "R38838 - ESE" })).unwrap();
+        add.execute(&json!({ "text": "Enviar informe" })).unwrap();
+
+        let partial = complete.execute(&json!({ "text": "R38838", "status": "partial", "note": "falta la firma" })).unwrap();
+        assert!(partial.summary.contains("Marqué como parcial «R38838 - ESE» (falta: falta la firma)") && partial.summary.contains("2 pendiente"), "{}", partial.summary);
+        assert_eq!((partial.data["status"].as_str(), partial.data["previous"].as_str(), partial.data["partial"].as_bool()), (Some("partial"), Some("pending"), Some(true)));
+        assert!(complete.preview(&json!({ "id": 2, "status": "partial" })).starts_with("Marcar como parcial «Enviar informe»"));
+
+        let listing = list.execute(&json!({})).unwrap();
+        assert!(listing.summary.contains("2 tarea(s) pendiente(s) de 2, 1 parcial(es)"), "{}", listing.summary);
+        assert!(listing.summary.contains("◐ #1 R38838 - ESE — falta la firma") && listing.summary.contains("○ #2 Enviar informe"), "{}", listing.summary);
+        let row = &listing.data["tasks"][0];
+        assert_eq!((row["status"].as_str(), row["note"].as_str(), row["partial"].as_bool()), (Some("partial"), Some("falta la firma"), Some(true)));
+        assert_eq!(list.execute(&json!({ "only_pending": true })).unwrap().data["tasks"].as_array().unwrap().len(), 2, "las parciales salen entre lo pendiente");
+
+        // Una parcial se puede terminar (por texto: sigue entre lo que queda) y el cambio dice de dónde venía.
+        let done = complete.execute(&json!({ "text": "R38838" })).unwrap();
+        assert_eq!((done.data["status"].as_str(), done.data["previous"].as_str(), done.data["note"].is_null()), (Some("done"), Some("partial"), true));
+        // Y volver atrás: de hecha a parcial, y de parcial a pendiente (se busca entre lo ya avanzado).
+        complete.execute(&json!({ "id": 1, "status": "partial", "note": "otra vez" })).unwrap();
+        assert!(complete.execute(&json!({ "text": "R38838", "status": "pending" })).unwrap().summary.contains("Volví a dejar pendiente"));
+        assert!(matches!(complete.execute(&json!({ "text": "Enviar", "status": "pending" })), Err(ToolError::Failed(m)) if m.contains("no encuentro")), "una sin empezar no se «reabre»");
+        // Lo antiguo sigue valiendo: done=false deja la tarea pendiente.
+        complete.execute(&json!({ "id": 2, "status": "partial" })).unwrap();
+        assert_eq!(complete.execute(&json!({ "id": 2, "done": false })).unwrap().data["status"], "pending");
     }
 }

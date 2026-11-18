@@ -770,22 +770,72 @@ function updateBadge() {
   reminderBadge.hidden = total === 0;
 }
 
+// Cambia el estado de una tarea (done, partial o pending) y vuelve a pintar la lista.
+async function setTaskStatus(item, status, note = null) {
+  try {
+    await invoke("set_task_status", { id: item.id, status, note });
+  } catch (error) {
+    setMessage(taskMessage, String(error), "error");
+  }
+  await loadTasks();
+}
+
+// El campo para decir qué falta de una tarea parcial: Intro guarda, Esc lo deja como estaba.
+function noteEditor(item) {
+  const form = document.createElement("form");
+  form.className = "task-note-edit";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = 200;
+  input.value = item.note ?? "";
+  input.placeholder = "¿Qué falta? (opcional)";
+  input.ariaLabel = "Qué falta de esta tarea";
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.textContent = "Guardar";
+  form.append(input, save);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    setTaskStatus(item, "partial", input.value.trim());
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      loadTasks();
+    }
+  });
+  return form;
+}
+
 function taskRow(item) {
   const row = document.createElement("div");
-  row.className = item.done ? "task done" : "task";
+  const status = item.done ? "done" : item.partial ? "partial" : "pending";
+  row.className = status === "pending" ? "task" : `task ${status}`;
 
   const check = document.createElement("input");
   check.type = "checkbox";
   check.checked = item.done;
   check.ariaLabel = item.done ? "Volver a abrir esta tarea" : "Marcar como hecha";
-  check.addEventListener("change", async () => {
+  check.addEventListener("change", () => {
     check.disabled = true;
-    try {
-      await invoke("set_task_done", { id: item.id, done: check.checked });
-    } catch (error) {
-      setMessage(taskMessage, String(error), "error");
-    }
-    await loadTasks();
+    setTaskStatus(item, check.checked ? "done" : "pending");
+  });
+
+  // «Parcial»: empezada pero sin terminar. Se puede añadir qué falta; al pulsarlo otra vez vuelve a pendiente.
+  const half = document.createElement("button");
+  half.type = "button";
+  half.className = "half";
+  half.textContent = "◐";
+  half.hidden = status === "done";
+  half.setAttribute("aria-pressed", String(status === "partial"));
+  half.title = half.ariaLabel = status === "partial" ? "Quitar «parcial» (volver a pendiente)" : "Marcar como parcial (terminada solo en parte)";
+  half.addEventListener("click", async () => {
+    half.disabled = true;
+    if (status === "partial") return setTaskStatus(item, "pending");
+    await setTaskStatus(item, "partial");
+    // Recién marcada: se ofrece apuntar qué falta.
+    const created = [...taskList.children].find((el) => el.dataset.id === String(item.id));
+    created?.querySelector(".note-link")?.click();
   });
 
   const text = document.createElement("div");
@@ -807,17 +857,34 @@ function taskRow(item) {
     await loadTasks();
   });
 
-  row.append(check, text, remove);
+  row.dataset.id = String(item.id);
+  row.append(check, text, half, remove);
+
+  if (status === "partial") {
+    // Qué falta: se ve bajo la tarea y al pulsarlo se edita.
+    const note = document.createElement("button");
+    note.type = "button";
+    note.className = item.note ? "note-link" : "note-link empty";
+    note.textContent = item.note ? `↳ ${item.note}` : "↳ añadir qué falta";
+    note.title = "Editar qué falta";
+    note.addEventListener("click", () => {
+      const editor = noteEditor(item);
+      note.replaceWith(editor);
+      editor.querySelector("input").focus();
+    });
+    row.append(note);
+  }
   return row;
 }
 
 function renderTasks() {
-  // Primero lo pendiente, luego lo hecho; dentro de cada grupo, en el orden en que se agregaron.
+  // Primero lo que queda (pendientes y parciales), luego lo hecho; dentro de cada grupo, en el orden en que se agregaron.
   const ordered = [...tasks.filter((t) => !t.done), ...tasks.filter((t) => t.done)];
   taskList.replaceChildren(...ordered.map(taskRow));
   const pending = tasks.filter((t) => !t.done).length;
+  const partial = tasks.filter((t) => t.partial).length;
   taskEmpty.hidden = tasks.length > 0;
-  taskCount.textContent = tasks.length ? `${pending} pendiente${pending === 1 ? "" : "s"}` : "";
+  taskCount.textContent = tasks.length ? `${pending} pendiente${pending === 1 ? "" : "s"}${partial ? ` · ${partial} parcial${partial === 1 ? "" : "es"}` : ""}` : "";
   taskClear.hidden = !tasks.some((t) => t.done);
   updateBadge();
 }
@@ -2431,7 +2498,7 @@ const TOOL_LABELS = {
   cancel_reminder: "Cancelar un recordatorio", remember: "Recordar algo", forget: "Olvidar algo", look_at_screen: "Mirar una ventana",
   list_windows: "Listar ventanas", list_controls: "Listar controles", type_text: "Escribir en otra aplicación",
   press_keys: "Pulsar teclas", click_control: "Pulsar un control",
-  add_task: "Agregar una tarea", list_tasks: "Listar tareas", complete_task: "Marcar una tarea", delete_task: "Borrar una tarea",
+  add_task: "Agregar una tarea", list_tasks: "Listar tareas", complete_task: "Marcar una tarea (hecha o parcial)", delete_task: "Borrar una tarea",
 };
 const toolLabel = (name) => TOOL_LABELS[name] ?? humanToolName(name);
 
