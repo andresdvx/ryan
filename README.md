@@ -5,14 +5,14 @@ Un asistente personal con IA que vive en tu escritorio de Windows como un compa�
 Está escrito en **Rust** con **Tauri 2**, y puede usar **Gemini, Claude, OpenAI** o **modelos locales con Ollama** (sin API key).
 
 <p align="center">
-  <img src="docs/images/chat.png" alt="Chat de Ryan reproduciendo música en Spotify" width="420">
+  <img src="docs/images/chat.png" alt="Ryan ayudando a organizar el día con un resumen de tareas pendientes y recordatorios" width="880">
 </p>
 
-> Las Imagenes de este README usan datos de ejemplo.
+> Las capturas muestran la interfaz actual con **datos ficticios de demostración**. No contienen conversaciones, archivos ni cuentas reales. Los proveedores y modelos visibles son ejemplos de configuración, no recomendaciones.
 
 ## Índice
 
-- [Imagenes](#capturas)
+- [Funcionalidades en imágenes](#funcionalidades-en-imágenes)
 - [Qué puede hacer](#qué-puede-hacer)
 - [Seguridad](#seguridad)
 - [Requisitos](#requisitos)
@@ -27,41 +27,96 @@ Está escrito en **Rust** con **Tauri 2**, y puede usar **Gemini, Claude, OpenAI
 - [Desarrollo](#desarrollo)
 - [Problemas frecuentes](#problemas-frecuentes)
 
-## Capturas
+<a id="capturas"></a>
+
+## Funcionalidades
+
+Estas son algunas cosas que puedes hacer con Ryan, con ejemplos de cómo aparecen en la aplicación.
+
+### Arrastrar archivos: analizar, resumir o convertir
+
+Arrastra un archivo desde el Explorador o el escritorio: sobre el personaje aparecen tres zonas. Suéltalo en **Analizar**, **Resumir** o **Convertir** según lo que necesites. También puedes soltarlo sobre el personaje o el chat para abrir el menú completo.
+
+<img src="docs/images/arrastrar-archivos.png" alt="Barra que aparece al arrastrar un archivo, con zonas para Analizar, Resumir y Convertir" width="340">
+
+### Analizar documentos
+
+Suelta un PDF, un documento de Office, una imagen o un archivo de texto en **Analizar**. Ryan puede explicar su contenido, identificar puntos importantes y responder preguntas sobre él. El contenido se procesa con el proveedor de IA que tengas configurado; con Ollama se queda en tu equipo.
+
+<img src="docs/images/analizar-archivo.png" alt="Análisis de un PDF de ejemplo con avances del proyecto, puntos importantes y un riesgo por revisar" width="880">
+
+### Resumir archivos
+
+Suelta un documento en **Resumir** para obtener una versión breve con las ideas principales. Por ejemplo, convierte unas notas de reunión en una lista de acuerdos y próximos pasos.
+
+<img src="docs/images/resumir-archivo.png" alt="Resumen de unas notas de reunión, con próximos pasos y una decisión pendiente" width="880">
+
+### Convertir y optimizar archivos
+
+Suelta un archivo en **Convertir** y elige entre los formatos compatibles. Según el archivo, puedes convertir imágenes, exportar documentos a PDF, pasar CSV a JSON, comprimir en ZIP o extraer su contenido. En imágenes también puedes reducir peso o tamaño y quitar metadatos.
+
+El resultado se guarda en el Escritorio o en la carpeta que elijas. **No sobrescribe el archivo original.**
 
 <table>
   <tr>
-    <td align="center"><img src="docs/images/confirm.png" alt="Confirmación antes de borrar una carpeta" width="300"><br><sub>Las acciones de riesgo piden confirmación detallada</sub></td>
-    <td align="center"><img src="docs/images/ai.png" alt="Ajustes de IA con Ollama" width="300"><br><sub>Elige proveedor de IA, incluido un modelo local</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/images/pet.png" alt="Ajustes del compañero" width="300"><br><sub>Nombre, avatar, comportamiento y memoria</sub></td>
-    <td align="center"><img src="docs/images/security.png" alt="Ajustes de seguridad" width="300"><br><sub>Tú decides qué herramientas puede usar la IA</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/images/recordatorios.png" alt="Pestaña de recordatorios programados" width="300"><br><sub>Todos tus recordatorios, con cuenta atrás</sub></td>
-    <td align="center"><img src="docs/images/modelo.png" alt="Selector de proveedor y modelo en la cabecera" width="300"><br><sub>Cambia de proveedor o de modelo desde la cabecera</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/images/comandos.png" alt="Paleta de comandos al escribir una barra" width="300"><br><sub>Escribe <code>/</code> y elige un comando</sub></td>
-    <td align="center"><img src="docs/images/historial.png" alt="Historial de conversaciones con búsqueda" width="300"><br><sub>Registro: busca y retoma conversaciones</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/images/hoy.png" alt="Pestaña Hoy con el resumen del día" width="300"><br><sub>Hoy: música, recordatorios y estado del equipo</sub></td>
-    <td align="center"><img src="docs/images/modos.png" alt="Modo Trabajo activo" width="300"><br><sub>Modos: Trabajo, Descanso, Concentración…</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/images/detalle-herramienta.png" alt="Un mensaje de herramienta desplegado con su detalle" width="300"><br><sub>Cada “✔ Moví…” se despliega y muestra qué hizo</sub></td>
-    <td align="center"><img src="docs/images/actividad.png" alt="Registro de acciones de Ryan" width="300"><br><sub>Registro: lo que ha hecho Ryan, con deshacer</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/images/mirar-ventana.png" alt="Vista previa de la ventana antes de adjuntarla" width="300"><br><sub>Mirar una ventana: la ves antes de enviarla</sub></td>
-    <td align="center"><img src="docs/images/editor-herramientas.png" alt="Editor de herramientas por categorías" width="300"><br><sub>Herramientas por categorías, con su nivel de riesgo</sub></td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2"><img src="docs/images/barra-rapida.png" alt="Barra rápida sobre el escritorio" width="420"><br><sub>Barra rápida: pide algo sin abrir el chat (<kbd>Win</kbd> + <kbd>Shift</kbd> + <kbd>J</kbd>)</sub></td>
+    <td><img src="docs/images/convertir-archivo.png" alt="Opciones reales para convertir una imagen PNG a JPG, WebP, PDF y otros formatos, y optimizarla" width="380"></td>
+    <td><img src="docs/images/conversion-lista.png" alt="Conversión de ejemplo terminada, con el JPG guardado en el Escritorio y el original conservado" width="380"></td>
   </tr>
 </table>
+
+### Reproducir música en Spotify
+
+Pídele: **«Reproduce (canción) en Spotify»**, sustituyendo `(canción)` por el título o artista que quieras escuchar. Ryan puede buscarla y reproducirla en la app de escritorio de Spotify. Desde el chat puedes pausar, retroceder o pasar a la siguiente pista.
+
+<img src="docs/images/musica.png" alt="Petición Reproduce (canción) en Spotify, confirmación de reproducción y controles de música en el chat" width="880">
+
+### Recordatorios con cuenta atrás
+
+Pídele **«Recuérdame descansar en 20 minutos»** o crea un aviso manualmente en **Pendientes**. Consulta cuánto falta, programa una hora concreta y cancela los avisos que ya no necesites.
+
+<img src="docs/images/recordatorios.png" alt="Formulario de recordatorios y lista de avisos para descansar, revisar una propuesta y hacer una llamada" width="880">
+
+### Tareas y avances parciales
+
+Pídele **«Agrega preparar la propuesta a mis tareas»**. Guarda pendientes sin hora, márcalos como hechos o indica que están empezados con una nota de lo que falta. También puedes gestionarlos desde **Pendientes**.
+
+<img src="docs/images/tareas.png" alt="Lista de tareas con un pendiente, una tarea parcial con nota y otra completada" width="880">
+
+### Organizar el Escritorio
+
+Pídele **«Organiza mi Escritorio en carpetas según el tipo de archivo»**. Ryan puede agrupar los archivos y mostrar qué cambió, sin borrarlos. Puedes solicitar deshacer desde el registro, con confirmación.
+
+<img src="docs/images/organizar-escritorio.png" alt="Organización del Escritorio en Documentos, Imágenes, Comprimidos y Otros, con resultado y opción de deshacer" width="880">
+
+### Crear carpetas y mover documentos
+
+Pídele **«Crea una carpeta Proyecto en Documentos y mueve allí propuesta.pdf de Descargas»**. Ryan permite crear, buscar, copiar, mover y renombrar dentro de Escritorio, Documentos y Descargas. Las acciones que lo requieren pasan por confirmación.
+
+<img src="docs/images/organizar-carpetas.png" alt="Creación de una carpeta Proyecto y traslado de una propuesta desde Descargas a Documentos" width="880">
+
+### Explicar lo que ves en pantalla
+
+Con un modelo compatible con imágenes, pídele **«Explícame esta ventana»**. Primero eliges y previsualizas la ventana; solo se adjunta cuando tú lo aceptas y envías el mensaje. Ryan puede ayudarte a entender notas, una interfaz o un mensaje de error.
+
+<img src="docs/images/explicar-pantalla.png" alt="Una ventana de notas adjunta al chat y la explicación de Ryan sobre sus puntos y próximos pasos" width="880">
+
+### Consultas rápidas · Win + Shift + J
+
+Pide algo sin abrir el chat: por ejemplo, **«¿Qué tengo pendiente hoy?»**. Envía con **Enter**, cierra con **Esc** o continúa la conversación en el chat. Si una acción requiere permiso, Ryan te lleva al chat para confirmarla.
+
+<img src="docs/images/barra-rapida.png" alt="Consulta rápida sobre tareas y recordatorios desde la barra flotante de Ryan" width="640">
+
+### Consultar el estado del equipo
+
+En **Hoy** puedes consultar batería, memoria y espacio en disco, retomar la última conversación y lanzar acciones frecuentes con un clic. También reúne tus próximos avisos y lo que está sonando.
+
+<img src="docs/images/hoy-equipo.png" alt="Batería, memoria y disco del equipo, última conversación y accesos para organizar archivos o mirar una ventana" width="880">
+
+**También disponible:** [modos de compañía](#qué-puede-hacer), historial de conversaciones con búsqueda, comandos al escribir `/` y registro de acciones con detalle y deshacer. Puedes personalizar personaje, IA y permisos desde [Configuración](#configuración).
+
+Las acciones delicadas o peligrosas piden permiso antes de continuar. Consulta [Seguridad](#seguridad) para conocer sus límites.
+
+Las capturas se obtienen de los mismos HTML, CSS y JavaScript de la app, con la API nativa sustituida por datos de demostración. Consulta [cómo regenerarlas](docs/screenshots.md).
 
 ### Personajes
 
@@ -131,7 +186,7 @@ cd ryan
 
 ### Un compañero con carácter
 
-- **Un chat con personalidad:** cada amigo tiñe el chat con sus propios colores (campos `accent` y `accent2` en `assets/characters.json`), aparece animado en la cabecera según lo que está haciendo y pone su carita junto a sus mensajes. Saluda según la hora del día y propone ideas para empezar.
+- **Un chat con personalidad:** cada amigo aporta su acento de color sobre superficies neutras (campos `accent` y `accent2` en `assets/characters.json`), aparece animado junto a su nombre según lo que está haciendo y pone su carita junto a sus mensajes. Saluda según la hora del día y propone ideas para empezar.
 - **Ánimo:** antes de cada respuesta, la IA recibe una pista de estilo según la hora (más suave de madrugada, más animado por la mañana), la batería (más breve si queda poca) y cuánto llevas sin una pausa (te sugiere descansar). Solo cambia el tono, nunca lo que hace ni sus reglas. La duración de tu racha de trabajo solo se usa si dejas activados los comentarios sobre el uso del equipo (*Ajustes > Compañero*).
 - **Escucha música contigo:** cuando suena música o un vídeo en cualquier aplicación que use los controles multimedia de Windows (Spotify, Apple Music, el navegador, VLC…), el personaje se pone unos auriculares del color de su acento, cabecea al ritmo, le salen notas musicales y se queda despierto disfrutándola. Al parar la música se los quita. Se puede apagar en *Ajustes > Compañero*.
 - **Avisos del equipo** (*Ajustes > Avisos*): te avisa cuando termina una descarga en la carpeta Descargas o conectas una memoria USB. Solo mira los nombres de los archivos, nunca su contenido.
@@ -139,7 +194,7 @@ cd ryan
 
 ## Configuración
 
-No hay archivos de configuración que editar a mano: todo se hace desde la propia aplicación, con el engranaje ⚙️ de la cabecera del chat (junto al modelo en uso).
+No hay archivos de configuración que editar a mano: todo se hace desde **Ajustes**, al pie de la barra lateral. En la vista compacta, usa el botón de ajustes junto a las pestañas.
 
 ### 1. Elige tu IA
 
@@ -191,7 +246,7 @@ Al arrancar aparece tu compañero en una esquina del escritorio y un icono en la
 
 Abre el chat y escribe con naturalidad. Algunos ejemplos:
 
-- "Pon *Do I Wanna Know* de Arctic Monkeys en Spotify."
+- "Reproduce (canción) en Spotify."
 - "Busca en YouTube un vídeo de recetas de pasta y reprodúcelo."
 - "Crea una carpeta llamada Fotos en el escritorio."
 - "Organiza mi carpeta de Descargas." / "Deshaz la última organización."
@@ -305,6 +360,8 @@ crates/
 src-tauri/         Aplicación Tauri 2: ventanas, ajustes, bandeja, atajo y comandos
 ui/                Interfaz (HTML, CSS y JavaScript sin dependencias)
 docs/images/       Capturas de este README
+docs/screenshots.md Cómo regenerar las capturas con datos ficticios
+tools/             Utilidades de sprites y generación de capturas
 plan.md            Especificación original del proyecto
 ```
 
