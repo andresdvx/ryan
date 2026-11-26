@@ -41,9 +41,9 @@ const MARGIN: i32 = 24;
 const PET_SIZE: f64 = 90.0;
 const CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(300);
 const CHAT_GAP: i32 = 8;
-const CHAT_MAX_SIZE: (f64, f64) = (620.0, 720.0);
+const CHAT_MAX_SIZE: (f64, f64) = (880.0, 720.0);
 const CHAT_MIN_SIZE: (f64, f64) = (380.0, 460.0);
-const CHAT_WIDTH_RATIO: f64 = 0.32;
+const CHAT_WIDTH_RATIO: f64 = 0.46;
 const CHAT_HEIGHT_RATIO: f64 = 0.78;
 
 /// Coloca la mascota en la esquina inferior derecha del área de trabajo (sin tapar la barra de tareas).

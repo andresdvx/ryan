@@ -2,38 +2,53 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ryan - Chat</title>
   <link rel="stylesheet" href="chat.css">
 </head>
 <body>
-  <header data-tauri-drag-region>
+  <header class="brand" data-tauri-drag-region>
     <div class="badge" data-tauri-drag-region><img id="header-avatar" alt="" hidden></div>
     <div class="identity" data-tauri-drag-region>
       <span id="assistant-title" class="title" data-tauri-drag-region>Ryan</span>
       <div class="subrow" data-tauri-drag-region>
       <span id="status" class="status" data-tauri-drag-region>Listo</span>
       <button id="profile-badge" class="profile-badge" type="button" title="Modo activo: pulsa para cambiarlo" hidden></button>
-      <button id="model-pill" class="model-pill" type="button" title="Cambiar de modelo" aria-haspopup="menu" aria-expanded="false" hidden>
-        <span id="model-pill-text"></span><span class="caret" aria-hidden="true">▾</span>
-      </button>
-      <button id="settings-btn" class="gear-btn" type="button" title="Ajustes" aria-label="Ajustes" aria-pressed="false">⚙️</button>
       </div>
     </div>
+  </header>
+  <header class="workspace-header" data-tauri-drag-region>
+    <div class="page-heading" data-tauri-drag-region>
+      <h1 id="page-title" data-tauri-drag-region>Chat</h1>
+      <p id="page-description" data-tauri-drag-region>Un espacio para resolver cosas juntos.</p>
+    </div>
+    <button id="model-pill" class="model-pill" type="button" title="Cambiar de modelo" aria-haspopup="menu" aria-expanded="false" hidden>
+      <span id="model-pill-text"></span><span class="caret" aria-hidden="true">▾</span>
+    </button>
     <button id="close" title="Cerrar (Esc)" aria-label="Cerrar">&times;</button>
   </header>
   <div id="model-menu" class="model-menu" role="menu" aria-label="Modelo de IA" hidden></div>
-  <nav class="tabs" role="tablist">
-    <button class="tab active" role="tab" data-tab="chat" aria-selected="true" title="Chat">💬 <span class="tab-label">Chat</span></button>
-    <button class="tab" role="tab" data-tab="today" aria-selected="false" title="Hoy">🏠 <span class="tab-label">Hoy</span></button>
-    <button class="tab" role="tab" data-tab="reminders" aria-selected="false" title="Tareas y recordatorios">✅ <span class="tab-label">Pendientes</span> <span id="reminder-badge" class="count" hidden></span></button>
-    <button class="tab" role="tab" data-tab="log" aria-selected="false" title="Conversaciones y acciones de Ryan">🕘 <span class="tab-label">Registro</span></button></nav>
+  <aside class="navigation" aria-label="Navegación principal">
+    <span class="nav-caption">TU ESPACIO</span>
+    <nav class="tabs" role="tablist" aria-label="Secciones de Ryan" aria-orientation="vertical">
+      <button id="tab-today" class="tab" role="tab" data-tab="today" aria-controls="view-today" aria-selected="false" tabindex="-1" title="Hoy"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10H3zM9 20v-7h6v7"/></svg><span class="tab-label">Hoy</span></button>
+      <button id="tab-chat" class="tab active" role="tab" data-tab="chat" aria-controls="view-chat" aria-selected="true" title="Chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 1-8 8H5l-3 3V11a9 9 0 0 1 18 0Z"/><path d="M7 10h8M7 14h5"/></svg><span class="tab-label">Chat</span></button>
+      <button id="tab-reminders" class="tab" role="tab" data-tab="reminders" aria-controls="view-reminders" aria-selected="false" tabindex="-1" title="Tareas y recordatorios"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8 12 3 3 5-6"/></svg><span class="tab-label">Pendientes</span> <span id="reminder-badge" class="count" hidden></span></button>
+      <button id="tab-log" class="tab" role="tab" data-tab="log" aria-controls="view-history view-activity" aria-selected="false" tabindex="-1" title="Conversaciones y acciones de Ryan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2 7M3 5v6h6M12 7v5l3 2"/></svg><span class="tab-label">Registro</span></button>
+    </nav>
+    <div class="nav-footer">
+      <button id="settings-btn" class="gear-btn" type="button" title="Ajustes" aria-label="Ajustes" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3z"/><circle cx="12" cy="12" r="3"/></svg><span>Ajustes</span></button>
+      <p>Tu compañero de escritorio</p>
+    </div>
+  </aside>
+  <div class="workspace-body">
   <div id="log-switch" class="subtabs" role="tablist" aria-label="Qué registro ver" hidden>
     <button type="button" class="subtab active" role="tab" data-part="history" aria-selected="true">💬 Conversaciones</button>
     <button type="button" class="subtab" role="tab" data-part="activity" aria-selected="false">🧾 Lo que hizo Ryan</button>
   </div>
 
-  <div id="view-chat" class="view">
-    <main id="history"></main>
+  <div id="view-chat" class="view" role="tabpanel" aria-labelledby="tab-chat">
+    <main id="history" aria-label="Conversación"></main>
     <section id="player" class="player no-art" aria-label="Reproductor" hidden>
       <img id="player-art" class="art" alt="" hidden>
       <div class="info">
@@ -68,21 +83,22 @@
     </div>
     <div id="attachments" class="attachments" aria-label="Imágenes adjuntas" hidden></div>
     <form id="form" autocomplete="off">
-      <button type="button" id="look-btn" class="icon-btn" title="Mirar una ventana: la captura y te la enseña antes de enviarla" aria-label="Mirar una ventana">👁</button>
-      <input id="input" type="text" placeholder="Cuéntame qué necesitas…" autofocus>
+      <button type="button" id="look-btn" class="icon-btn" title="Mirar una ventana: la captura y te la enseña antes de enviarla" aria-label="Mirar una ventana"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      <input id="input" type="text" placeholder="Cuéntame qué necesitas…" aria-label="Mensaje para Ryan" autofocus>
       <button type="submit" id="send" aria-label="Enviar" title="Enviar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12.6 2-12.6 2z"/></svg></button>
     </form>
   </div>
 
-  <section id="view-today" class="view" hidden>
+  <section id="view-today" class="view" role="tabpanel" aria-labelledby="tab-today" hidden>
     <div class="panels">
       <div class="panel">
         <div class="card hello">
           <div id="today-date" class="date"></div>
           <div id="today-greeting" class="big"></div>
+          <p class="hello-note">Un poco de orden. Más espacio para lo que importa.</p>
         </div>
 
-        <div class="card field">
+        <div class="card field today-mode">
           <h3>Modo</h3>
           <div id="profile-chips" class="profile-chips" role="radiogroup" aria-label="Modo de Ryan"></div>
           <p id="profile-desc" class="hint"></p>
@@ -104,13 +120,13 @@
           </div>
         </div>
 
-        <div class="card field">
+        <div class="card field today-reminders">
           <h3>Próximos recordatorios <button type="button" id="today-all-reminders" class="link-btn">Ver todos</button></h3>
           <div id="today-reminders" class="reminders"></div>
           <p id="today-reminders-empty" class="hint empty">Nada programado. Pídeselo en el chat: «recuérdame beber agua en 20 minutos».</p>
         </div>
 
-        <div class="card field">
+        <div class="card field today-system">
           <h3>Tu equipo</h3>
           <div id="today-stats" class="stats"></div>
         </div>
@@ -126,7 +142,7 @@
           </div>
         </div>
 
-        <div class="card field">
+        <div class="card field today-shortcuts">
           <h3>Atajos</h3>
           <div id="today-shortcuts" class="shortcuts"></div>
         </div>
@@ -134,7 +150,7 @@
     </div>
   </section>
 
-  <section id="view-activity" class="view" hidden>
+  <section id="view-activity" class="view" role="tabpanel" aria-labelledby="tab-log" hidden>
     <div class="panels">
       <div class="panel">
         <div class="card field">
@@ -160,7 +176,7 @@
     </div>
   </section>
 
-  <section id="view-history" class="view" hidden>
+  <section id="view-history" class="view" role="tabpanel" aria-labelledby="tab-log" hidden>
     <div class="panels">
       <div id="history-list-view" class="panel">
         <div class="card field">
@@ -191,7 +207,7 @@
     </div>
   </section>
 
-  <section id="view-reminders" class="view" hidden>
+  <section id="view-reminders" class="view" role="tabpanel" aria-labelledby="tab-reminders" hidden>
     <div class="panels">
       <div class="panel">
         <h2 class="section-title">✅ Tareas</h2>
@@ -481,6 +497,7 @@
     </div>
   </section>
 
+  </div>
   <div id="drop-overlay" class="drop-overlay" aria-hidden="true" hidden>
     <div class="drop-card"><div class="drop-emoji">📎</div><strong>Suelta tu archivo aquí</strong><span>Podrás analizarlo, resumirlo, preguntarle algo o convertirlo.</span></div>
   </div>

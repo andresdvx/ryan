@@ -289,11 +289,17 @@ function greeting() {
 
 // Ideas para arrancar: al pulsar una se escribe en la caja (sin enviarla) para que la ajustes a tu gusto.
 const IDEAS = [
-  ["🎵", "Pon música tranquila"],
-  ["⏰", "Recuérdame descansar en 30 minutos"],
-  ["📂", "Organiza mi carpeta de Descargas"],
-  ["🔎", "Busca algo interesante para hoy"],
+  ["music", "Pon música tranquila"],
+  ["clock", "Recuérdame descansar en 30 minutos"],
+  ["folder", "Organiza mi carpeta de Descargas"],
+  ["search", "Busca algo interesante para hoy"],
 ];
+const IDEA_PATHS = {
+  music: "M9 18V5l11-2v13M9 8l11-2M9 18a3 3 0 1 1-3-3c2 0 3 1 3 3Zm11-2a3 3 0 1 1-3-3c2 0 3 1 3 3Z",
+  clock: "M12 8v4l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+  folder: "M3 7V5h6l2 2h10v13H3V7Zm0 3h18",
+  search: "m16 16 5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z",
+};
 let ideasEl = null;
 
 function showIdeas() {
@@ -303,7 +309,16 @@ function showIdeas() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "idea";
-    button.textContent = `${icon} ${text}`;
+    const symbol = document.createElement("span");
+    symbol.className = "idea-icon";
+    symbol.setAttribute("aria-hidden", "true");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    const path = document.createElementNS(svg.namespaceURI, "path");
+    path.setAttribute("d", IDEA_PATHS[icon]);
+    svg.append(path);
+    symbol.append(svg);
+    button.append(symbol, document.createTextNode(text));
     button.addEventListener("click", () => {
       input.value = text;
       input.focus();
@@ -452,7 +467,7 @@ function hexToRgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-// Cada amigo tiene sus colores (manifiesto): tiñen el chat entero. Sin ellos se queda el violeta de siempre.
+// Cada amigo aporta sus acentos; las superficies se mantienen neutras.
 function applyTheme(entry) {
   const root = document.documentElement.style;
   const accent = hexToRgb(entry.accent);
@@ -473,7 +488,7 @@ function playFriend(state) {
   friendIndex = 0;
   headerAvatar.src = friendFrames[0].src;
   // Dormido o en reposo basta con un solo cuadro si no hay nada más que mover.
-  if (friendFrames.length < 2) return;
+  if (friendFrames.length < 2 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const spec = friend.entry.states?.[state];
   const base = Number.isFinite(spec?.ms) && spec.ms >= 20 ? spec.ms : (FRAME_MS[state] ?? FRAME_MS.idle);
   const ms = base * (friend.entry.speed ?? 1) * HEADER_SLOWDOWN;
@@ -531,12 +546,22 @@ let tabBeforeSettings = "chat";
 // La pestaña Registro junta Conversaciones y Lo que hizo Ryan; se recuerda cuál se estaba viendo.
 const logSwitch = document.getElementById("log-switch");
 let logPart = "history";
+const PAGE_COPY = {
+  chat: ["Chat", "Un espacio para resolver cosas juntos."],
+  today: ["Hoy", "Lo importante de tu día, de un vistazo."],
+  reminders: ["Pendientes", "Menos cosas en la cabeza. Todo en su sitio."],
+  log: ["Registro", "Tus conversaciones y las acciones de Ryan."],
+  settings: ["Ajustes", "Haz que Ryan se sienta más tuyo."],
+};
 
 function showTab(name) {
   if (name === "log") name = logPart;
   if (name === "history" || name === "activity") logPart = name;
   const inLog = name === "history" || name === "activity";
   const tabKey = inLog ? "log" : name;
+  const [title, description] = PAGE_COPY[tabKey] || PAGE_COPY.chat;
+  document.getElementById("page-title").textContent = title;
+  document.getElementById("page-description").textContent = description;
   logSwitch.hidden = !inLog;
   for (const part of logSwitch.children) {
     const active = part.dataset.part === name;
@@ -551,6 +576,8 @@ function showTab(name) {
     const active = tab.dataset.tab === tabKey;
     tab.classList.toggle("active", active);
     tab.setAttribute("aria-selected", String(active));
+    // Ajustes tiene su propio botón; la última sección permanece accesible con Tab.
+    tab.tabIndex = active || (name === "settings" && tab.dataset.tab === tabBeforeSettings.replace(/^(history|activity)$/, "log")) ? 0 : -1;
   });
   Object.entries(views).forEach(([key, view]) => (view.hidden = key !== name));
   if (name === "reminders") openReminders();
@@ -563,6 +590,24 @@ function showTab(name) {
   else if (name === "chat") input.focus();
 }
 tabs.forEach((tab) => tab.addEventListener("click", () => showTab(tab.dataset.tab)));
+const navigationMedia = window.matchMedia("(max-width: 719px)");
+function updateNavigationOrientation() {
+  document.querySelector(".tabs").setAttribute("aria-orientation", navigationMedia.matches ? "horizontal" : "vertical");
+}
+navigationMedia.addEventListener("change", updateNavigationOrientation);
+updateNavigationOrientation();
+document.querySelector(".tabs").addEventListener("keydown", (event) => {
+  const previous = navigationMedia.matches ? "ArrowLeft" : "ArrowUp";
+  const next = navigationMedia.matches ? "ArrowRight" : "ArrowDown";
+  if (![previous, next, "Home", "End"].includes(event.key)) return;
+  const index = [...tabs].indexOf(document.activeElement);
+  if (index < 0) return;
+  event.preventDefault();
+  const target = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
+    : (index + (event.key === next ? 1 : -1) + tabs.length) % tabs.length;
+  showTab(tabs[target].dataset.tab);
+  tabs[target].focus();
+});
 logSwitch.addEventListener("click", (e) => {
   const part = e.target.closest("[data-part]");
   if (part) showTab(part.dataset.part);

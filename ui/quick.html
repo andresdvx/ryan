@@ -2,21 +2,30 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ryan - Barra rápida</title>
   <link rel="stylesheet" href="quick.css">
 </head>
 <body>
   <main id="bar" class="bar">
-    <div class="line">
-      <span class="logo" aria-hidden="true">✦</span>
-      <input id="q-input" type="text" placeholder="Pídele algo a Ryan…" autocomplete="off" spellcheck="false" autofocus aria-label="Pídele algo al asistente">
-      <span id="q-state" class="state" role="status"></span>
+    <form id="q-form" class="line" autocomplete="off">
+      <span class="logo" aria-hidden="true"><img id="q-avatar" alt="" hidden><svg id="q-logo" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/></svg></span>
+      <div class="input-stack">
+        <label class="eyebrow" for="q-input">BARRA RÁPIDA <span aria-hidden="true">/</span> <span id="q-name">Ryan</span></label>
+        <input id="q-input" type="text" placeholder="Pídele algo a Ryan…" autocomplete="off" spellcheck="false" autofocus aria-label="Pídele algo al asistente">
+      </div>
+      <button id="q-send" class="send" type="submit" title="Enviar (Enter)" aria-label="Enviar petición" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
       <button id="q-close" class="close" type="button" title="Cerrar (Esc)" aria-label="Cerrar">&times;</button>
+    </form>
+    <div class="status-row">
+      <span id="q-state" class="state" role="status" aria-live="polite"></span>
+      <span id="q-idle" class="idle-hint">Una petición, sin abrir el chat.</span>
+      <span class="key-hints" aria-hidden="true"><kbd>↵</kbd> Enviar <span class="key-divider"></span><kbd>Esc</kbd> Cerrar</span>
     </div>
     <section id="q-answer" class="answer" aria-live="polite" hidden></section>
     <footer id="q-foot" class="foot" hidden>
-      <button id="q-open" class="open" type="button">Abrir en el chat ↗</button>
-      <span class="hint">Escribe otra cosa para seguir · Esc para cerrar</span>
+      <button id="q-open" class="open" type="button">Continuar en el chat <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></button>
+      <span class="hint">O escribe otra petición arriba</span>
     </footer>
   </main>
   <script src="richtext.js"></script>
