@@ -41,7 +41,7 @@
         "label": "chat",
         "title": "Ryan - Chat",
         "url": "chat.html",
-        "width": 620,
+        "width": 880,
         "height": 720,
         "visible": false,
         "decorations": false,

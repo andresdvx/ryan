@@ -32,6 +32,7 @@ mod music;
 mod notify;
 mod power;
 mod profiles;
+mod productivity;
 mod secrets;
 mod system_events;
 mod usage;
@@ -41,9 +42,9 @@ const MARGIN: i32 = 24;
 const PET_SIZE: f64 = 90.0;
 const CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(300);
 const CHAT_GAP: i32 = 8;
-const CHAT_MAX_SIZE: (f64, f64) = (620.0, 720.0);
+const CHAT_MAX_SIZE: (f64, f64) = (880.0, 720.0);
 const CHAT_MIN_SIZE: (f64, f64) = (380.0, 460.0);
-const CHAT_WIDTH_RATIO: f64 = 0.32;
+const CHAT_WIDTH_RATIO: f64 = 0.46;
 const CHAT_HEIGHT_RATIO: f64 = 0.78;
 
 /// Coloca la mascota en la esquina inferior derecha del área de trabajo (sin tapar la barra de tareas).
@@ -731,24 +732,29 @@ fn open_recycle_bin() -> Result<(), String> {
 fn list_reminders(app: AppHandle) -> Value {
     // Antes de terminar el arranque todavía no hay almacén: se responde con una lista vacía.
     let pending = app.try_state::<Arc<zen_desktop::Reminders>>().map(|reminders| reminders.list()).unwrap_or_default();
-    let items: Vec<Value> = pending.iter().map(|r| json!({ "id": r.id, "text": r.text, "due": r.due })).collect();
+    let items: Vec<Value> = pending.iter().map(|r| json!({ "id": r.id, "text": r.text, "due": r.due, "recurrence": r.recurrence, "repeat_label": r.recurrence.as_ref().map(|rule| rule.label()) })).collect();
     json!({ "items": items, "max": zen_desktop::MAX_REMINDERS, "now": zen_desktop::unix_now() })
 }
 
 /// Crea un recordatorio: `minutes` (dentro de cuánto) o `at` (hora HH:MM, 24 h), una de las dos.
 #[tauri::command]
-fn add_reminder(reminders: tauri::State<Arc<zen_desktop::Reminders>>, text: String, minutes: Option<u64>, at: Option<String>) -> Result<String, String> {
-    let args = match (minutes, at) {
+fn add_reminder(app: AppHandle, reminders: tauri::State<Arc<zen_desktop::Reminders>>, text: String, minutes: Option<u64>, at: Option<String>, recurrence: Option<Value>) -> Result<String, String> {
+    let mut args = match (minutes, at) {
         (Some(minutes), None) => json!({ "text": text, "delay_seconds": minutes.saturating_mul(60) }),
         (None, Some(at)) => json!({ "text": text, "at": at }),
         _ => return Err("Indica dentro de cuántos minutos o a qué hora.".into()),
     };
-    reminders.create(&args).map(|(_, when)| when)
+    if let Some(recurrence) = recurrence { args["recurrence"] = recurrence; }
+    let (_, when) = reminders.create(&args)?;
+    let _ = app.emit("reminders-changed", ());
+    Ok(when)
 }
 
 #[tauri::command]
-fn cancel_reminder(reminders: tauri::State<Arc<zen_desktop::Reminders>>, id: u64) -> bool {
-    reminders.cancel(id).is_some()
+fn cancel_reminder(app: AppHandle, reminders: tauri::State<Arc<zen_desktop::Reminders>>, id: u64) -> bool {
+    let removed = reminders.cancel(id).is_some();
+    if removed { let _ = app.emit("reminders-changed", ()); }
+    removed
 }
 
 fn tasks_store(app: &AppHandle) -> Result<Arc<zen_desktop::Tasks>, String> {
@@ -1134,7 +1140,8 @@ async fn list_apps(app: AppHandle, refresh: bool) -> Result<Value, String> {
                 error = Some(reason);
             }
         }
-        let enabled: Vec<String> = catalog.custom().into_iter().map(|app| app.app_id).collect();
+        let custom = catalog.custom();
+        let enabled: Vec<String> = custom.iter().map(|app| app.app_id.clone()).collect();
         let builtin: Vec<Value> = catalog
             .builtin_status()
             .into_iter()
@@ -1143,7 +1150,7 @@ async fn list_apps(app: AppHandle, refresh: bool) -> Result<Value, String> {
         let (apps, hidden_tools) = catalog.selectable().unwrap_or_default();
         let apps: Vec<Value> = apps
             .into_iter()
-            .map(|app| json!({ "enabled": enabled.contains(&app.app_id), "name": app.name, "app_id": app.app_id }))
+            .map(|app| json!({ "enabled": enabled.contains(&app.app_id), "name": app.name, "key": custom.iter().find(|entry| entry.app_id == app.app_id).map(|entry| entry.key.clone()), "app_id": app.app_id }))
             .collect();
         json!({ "builtin": builtin, "apps": apps, "hidden_tools": hidden_tools, "error": error })
     })
@@ -1313,6 +1320,12 @@ fn main() {
             hide_chat,
             submit_message,
             set_profile,
+            productivity::get_productivity,
+            productivity::focus_action,
+            productivity::save_routine,
+            productivity::delete_routine,
+            productivity::run_routine,
+            productivity::cancel_routine,
             list_activity,
             undo_activity,
             clear_activity,
@@ -1410,6 +1423,9 @@ fn main() {
             });
             registry.register(zen_core::websearch::WebSearch::new(provider_for_search));
             let reminders = Arc::new(zen_desktop::Reminders::open(data_dir.clone()));
+            app.manage(zen_desktop::productivity::FocusTimer::open(data_dir.clone()));
+            app.manage(zen_desktop::productivity::Routines::open(data_dir.clone()));
+            app.manage(productivity::RoutineRun::default());
             let apps = Arc::new(zen_desktop::AppCatalog::new());
             apps.configure(settings.disabled_apps.clone(), settings.custom_apps.clone());
             app.manage(Arc::new(zen_desktop::conversations::Conversations::open(data_dir.clone())));
@@ -1448,6 +1464,7 @@ fn main() {
             app.manage(reminders.clone());
             system_events::spawn(app.handle().clone(), reminders.clone());
             alarms::spawn(app.handle().clone(), reminders);
+            productivity::spawn(app.handle().clone());
             media::spawn(app.handle().clone());
             music::spawn(app.handle().clone());
             filedrop::attach(app.handle());

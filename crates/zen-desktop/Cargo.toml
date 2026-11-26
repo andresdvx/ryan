@@ -7,6 +7,8 @@ edition = "2021"
 arboard = { version = "3.7.0", default-features = false }
 dirs = "7.0.0"
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
+serde = { version = "1.0", features = ["derive"] }
+chrono = "0.4"
 ureq = "3.5.0"
 url = "2.5.8"
 windows = { version = "0.62.2", features = ["Media_Control", "Media_Ocr", "Graphics_Imaging", "Data_Pdf", "Globalization", "Storage", "Foundation_Collections", "Foundation", "Storage_Streams", "Win32_System_WinRT", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Accessibility", "Win32_Foundation"] }

@@ -9,6 +9,8 @@ const input = document.getElementById("q-input");
 const stateEl = document.getElementById("q-state");
 const answer = document.getElementById("q-answer");
 const foot = document.getElementById("q-foot");
+const send = document.getElementById("q-send");
+const idleHint = document.getElementById("q-idle");
 
 // Hay una petición en curso (se envió y aún no terminó de contestar).
 let waiting = false;
@@ -20,10 +22,19 @@ let doneTimer = null;
 function fit() {
   invoke("resize_quick", { height: Math.ceil(bar.getBoundingClientRect().height) + 20 }).catch(() => {});
 }
+// También recoge cambios de fuente, imágenes y saltos de línea del contenido.
+new ResizeObserver(fit).observe(bar);
+
+function updateSend() {
+  send.disabled = waiting || !input.value.trim();
+}
 
 function setState(text, busy = false) {
   stateEl.textContent = text;
   stateEl.classList.toggle("busy", busy);
+  idleHint.hidden = Boolean(text);
+  bar.dataset.phase = busy ? "busy" : "ready";
+  updateSend();
 }
 
 function reset() {
@@ -87,7 +98,7 @@ function finalMessage(text) {
 
 function submit() {
   const text = input.value.trim();
-  if (!text) return;
+  if (!text || waiting) return;
   waiting = true;
   clearTimeout(doneTimer);
   answer.replaceChildren();
@@ -99,7 +110,10 @@ function submit() {
   setState("Pensando…", true);
   input.value = "";
   show();
-  invoke("quick_submit", { text });
+  invoke("quick_submit", { text }).catch(() => {
+    note("No pude enviar la petición. Inténtalo de nuevo.", true);
+    finish();
+  });
 }
 
 function finish() {
@@ -110,11 +124,13 @@ function finish() {
   fit();
 }
 
+document.getElementById("q-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  submit();
+});
+input.addEventListener("input", updateSend);
 input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    submit();
-  }
+  if (e.key === "Enter" && e.isComposing) e.preventDefault();
 });
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") invoke("hide_quick_cmd");
@@ -130,7 +146,10 @@ appWindow.onFocusChanged(({ payload: focused }) => {
 listen("quick-opened", () => {
   reset();
   invoke("get_assistant_name")
-    .then((name) => (input.placeholder = `Pídele algo a ${name}…`))
+    .then((name) => {
+      input.placeholder = `Pídele algo a ${name}…`;
+      document.getElementById("q-name").textContent = name;
+    })
     .catch(() => {});
 });
 
@@ -155,7 +174,10 @@ listen("chat-stream-abort", () => {
   streamEl = null;
 });
 listen("confirmation-request", () => {
-  if (waiting) setState("Necesita tu permiso: te lo enseño en el chat", false);
+  if (waiting) {
+    setState("Necesita tu permiso. Revisa el chat.", false);
+    bar.dataset.phase = "permission";
+  }
 });
 
 // Cuándo termina: la mascota vuelve al reposo y no pasa nada más durante un momento (entre dos pasos de una
@@ -194,6 +216,18 @@ async function applyTheme() {
     else root.removeProperty("--accent-rgb");
     if (accent2) root.setProperty("--accent-2-rgb", accent2.join(" "));
     else root.removeProperty("--accent-2-rgb");
+    const avatar = document.getElementById("q-avatar");
+    const frame = entry.preview_frame || 1;
+    const filename = entry.pattern.replace("{nn}", String(frame).padStart(2, "0")).replace("{n}", String(frame));
+    avatar.onload = () => {
+      avatar.hidden = false;
+      document.getElementById("q-logo").setAttribute("hidden", "");
+    };
+    avatar.onerror = () => {
+      avatar.hidden = true;
+      document.getElementById("q-logo").removeAttribute("hidden");
+    };
+    avatar.src = `assets/${entry.folder}/${filename}`;
   } catch {
     // sin el manifiesto se queda el violeta de siempre
   }
