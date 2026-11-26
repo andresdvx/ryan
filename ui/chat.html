@@ -96,7 +96,57 @@
           <div id="today-date" class="date"></div>
           <div id="today-greeting" class="big"></div>
           <p class="hello-note">Un poco de orden. Más espacio para lo que importa.</p>
+          <div class="productivity-links"><button type="button" class="link-btn" id="jump-focus">Enfoque y descansos ↗</button><button type="button" class="link-btn" id="jump-routines">Mis rutinas ↗</button></div>
         </div>
+
+        <section class="card field focus-card" aria-labelledby="focus-heading">
+          <h3 id="focus-heading" tabindex="-1">Enfoque y descansos</h3>
+          <div class="focus-overview">
+            <div class="focus-clock" id="focus-clock" role="timer" aria-live="off" aria-label="Tiempo restante">
+              <span id="focus-phase">ENFOQUE</span><strong id="focus-time">25:00</strong>
+            </div>
+            <div class="focus-info">
+              <p id="focus-status" role="status">Preparando el temporizador…</p>
+              <p id="focus-count" class="hint"></p>
+              <p class="hint">Sigue funcionando aunque cierres el chat. Cada bloque se inicia manualmente.</p>
+            </div>
+          </div>
+          <div class="focus-durations">
+            <label>Enfoque <span class="hint">(min)</span><input id="focus-work" type="number" min="1" max="180" value="25"></label>
+            <label>Descanso <span class="hint">(min)</span><input id="focus-break" type="number" min="1" max="60" value="5"></label>
+          </div>
+          <div class="row focus-actions">
+            <button type="button" id="focus-start" disabled>Iniciar enfoque</button>
+            <button type="button" id="focus-pause" class="secondary" hidden>Pausar</button>
+            <button type="button" id="focus-stop" class="secondary" disabled>Finalizar</button>
+            <button type="button" id="focus-quiet" class="secondary">Modo Concentración</button>
+          </div>
+          <p class="hint">El temporizador no cambia tu modo ni tus preferencias. Concentración silencia los avisos; puedes volver a Normal cuando quieras.</p>
+          <p id="focus-message" class="message" role="status"></p>
+        </section>
+
+        <section class="card field routines-card" aria-labelledby="routines-heading">
+          <h3 id="routines-heading" tabindex="-1">Mis rutinas <button type="button" id="routine-new" class="link-btn">+ Crear rutina</button></h3>
+          <p class="hint">Tus acciones habituales, en orden. Se ejecutan solo cuando tú lo pides y respetan los permisos de cada herramienta.</p>
+          <div id="routine-running" class="routine-running" hidden><p id="routine-progress" role="status"></p><button type="button" id="routine-stop" class="secondary">Detener tras el paso actual</button></div>
+          <div id="routine-list" class="routine-list"></div>
+          <p id="routines-empty" class="hint">Todavía no hay rutinas. Crea una para empezar tu jornada.</p>
+          <section id="routine-review" class="routine-review" aria-labelledby="routine-review-title" hidden>
+            <strong id="routine-review-title"></strong>
+            <ol id="routine-review-steps"></ol>
+            <p class="hint">Si falla o cancelas un paso, no se ejecutan los siguientes. Los anteriores no se deshacen automáticamente.</p>
+            <div class="row"><button type="button" id="routine-confirm">Ejecutar estos pasos</button><button type="button" id="routine-review-cancel" class="secondary">Volver</button></div>
+          </section>
+          <form id="routine-form" class="routine-editor" autocomplete="off" hidden>
+            <label for="routine-name">Nombre de la rutina</label>
+            <input id="routine-name" type="text" maxlength="60" placeholder="Por ejemplo: Empezar mi jornada" required>
+            <div id="routine-steps" class="routine-steps"></div>
+            <button type="button" id="routine-add-step" class="secondary">+ Añadir paso</button>
+            <p class="hint">Hasta 8 pasos y 20 rutinas. No se admiten terminales, borrados ni control de otras ventanas.</p>
+            <div class="row"><button type="submit" id="routine-save">Guardar rutina</button><button type="button" id="routine-edit-cancel" class="secondary">Cancelar edición</button></div>
+          </form>
+          <p id="routine-message" class="message" role="status"></p>
+        </section>
 
         <div class="card field today-mode">
           <h3>Modo</h3>
@@ -230,6 +280,21 @@
         <form id="reminder-form" class="card field" autocomplete="off">
           <h3>Nuevo recordatorio</h3>
           <input id="reminder-text" type="text" maxlength="200" spellcheck="true" placeholder="¿Qué quieres que te recuerde?" aria-label="Qué recordar">
+          <div class="row recurrence-controls">
+            <label class="recurrence-label">Repetir
+              <select id="reminder-repeat">
+                <option value="none">Solo una vez</option>
+                <option value="interval">Cada cierto tiempo</option>
+                <option value="daily">Todos los días</option>
+                <option value="weekdays">De lunes a viernes</option>
+                <option value="weekly">Una vez por semana</option>
+              </select>
+            </label>
+            <label id="reminder-weekday-wrap" class="recurrence-label" hidden>Día
+              <select id="reminder-weekday"><option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option><option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option><option value="7">Domingo</option></select>
+            </label>
+          </div>
+          <p id="reminder-repeat-hint" class="hint" hidden>La repetición sigue activa hasta que canceles el recordatorio. Si Ryan estuvo cerrado, avisa una vez al volver y calcula la siguiente fecha.</p>
           <div class="row when">
             <select id="reminder-mode" aria-label="Cuándo">
               <option value="in">Dentro de</option>
@@ -503,6 +568,7 @@
   </div>
   <script src="richtext.js"></script>
   <script src="chat.js"></script>
+  <script src="productivity.js"></script>
   <script src="player.js"></script>
 </body>
 </html>

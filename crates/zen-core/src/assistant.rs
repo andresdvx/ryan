@@ -208,6 +208,26 @@ impl Assistant {
         self.bus.publish(Event::AssistantReplied);
     }
 
+    /// Secuencia explícita del usuario, sin IA. Comparte la exclusión del chat y detiene el lote al fallar.
+    pub fn run_sequence(&self, calls: &[ToolInvocation], ui: &dyn AssistantUi, cancelled: &std::sync::atomic::AtomicBool) -> Result<usize, String> {
+        let _turn = self.turn.lock().expect("turno envenenado");
+        if calls.is_empty() || calls.len() > 8 { return Err("La rutina debe tener de 1 a 8 pasos.".into()); }
+        for (index, call) in calls.iter().enumerate() {
+            if cancelled.load(std::sync::atomic::Ordering::SeqCst) {
+                self.bus.publish(Event::AssistantReplied);
+                return Err(format!("Rutina detenida antes del paso {}.", index + 1));
+            }
+            self.bus.publish(Event::TaskProgress { step: index + 1, total: calls.len(), tool: call.name.clone() });
+            let result = self.run_tool(call, ui);
+            if matches!(result, Message::ToolResult { is_error: true, .. }) {
+                self.bus.publish(Event::AssistantReplied);
+                return Err(format!("Rutina detenida en el paso {}. Los pasos anteriores no se revierten automáticamente.", index + 1));
+            }
+        }
+        self.bus.publish(Event::AssistantReplied);
+        Ok(calls.len())
+    }
+
     /// Ejecuta una herramienta con el mismo camino de seguridad, venga de la IA o del usuario.
     pub fn run_tool(&self, call: &ToolInvocation, ui: &dyn AssistantUi) -> Message {
         let tool_call = ToolCall { name: call.name.clone(), args: call.args.clone() };
@@ -672,6 +692,34 @@ mod tests {
         let bus = Arc::new(EventBus::new());
         let executor = Arc::new(ToolExecutor::new(registry, PermissionPolicy::default(), bus.clone()));
         (Assistant::new(executor, bus.clone()), safe_runs, confirm_runs, bus)
+    }
+
+    #[test]
+    fn rutina_se_detiene_si_el_usuario_rechaza_un_paso() {
+        let (assistant, safe, confirm, _) = setup();
+        let calls: Vec<_> = ["safe_tool", "confirm_tool", "safe_tool"].into_iter().map(|name| ToolInvocation { id: None, name: name.into(), args: json!({}) }).collect();
+        let stopped = std::sync::atomic::AtomicBool::new(false);
+        assert!(assistant.run_sequence(&calls, &ui(false), &stopped).unwrap_err().contains("paso 2"));
+        assert_eq!(safe.load(Ordering::SeqCst), 1);
+        assert_eq!(confirm.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn rutina_no_ejecuta_herramientas_desactivadas_y_respeta_detencion() {
+        let runs = Arc::new(AtomicUsize::new(0));
+        let mut registry = ToolRegistry::new();
+        registry.register(FakeTool { name: "blocked", risk: RiskLevel::Safe, runs: runs.clone() });
+        let mut policy = PermissionPolicy::default();
+        policy.disable_tool("blocked");
+        let bus = Arc::new(EventBus::new());
+        let assistant = Assistant::new(Arc::new(ToolExecutor::new(registry, policy, bus.clone())), bus);
+        let calls = [ToolInvocation { id: None, name: "blocked".into(), args: json!({}) }];
+        assert!(assistant.run_sequence(&calls, &ui(true), &std::sync::atomic::AtomicBool::new(false)).is_err());
+        assert_eq!(runs.load(Ordering::SeqCst), 0);
+        let (assistant, runs, _, _) = setup();
+        let calls = [ToolInvocation { id: None, name: "safe_tool".into(), args: json!({}) }];
+        assert!(assistant.run_sequence(&calls, &ui(true), &std::sync::atomic::AtomicBool::new(true)).is_err());
+        assert_eq!(runs.load(Ordering::SeqCst), 0);
     }
 
     #[test]

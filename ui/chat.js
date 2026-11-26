@@ -681,10 +681,18 @@ function reminderRow(item) {
   cancel.className = "cancel";
   cancel.textContent = "✕";
   cancel.title = cancel.ariaLabel = "Cancelar este recordatorio";
+  if (item.recurrence) {
+    const repeat = document.createElement("span");
+    repeat.className = "repeat-label";
+    repeat.textContent = item.repeat_label || "Recurrente";
+    text.append(document.createElement("br"), repeat);
+    cancel.title = cancel.ariaLabel = "Cancelar este recordatorio y sus repeticiones";
+  }
   cancel.addEventListener("click", async () => {
     cancel.disabled = true;
     try {
-      await invoke("cancel_reminder", { id: item.id });
+      const removed = await invoke("cancel_reminder", { id: item.id });
+      if (!removed) throw new Error("No pude cancelar el recordatorio; puede que ya no exista o no se pudiera guardar el cambio.");
       setMessage(reminderMessage, "Recordatorio cancelado.", "ok");
     } catch (error) {
       setMessage(reminderMessage, String(error), "error");
@@ -753,6 +761,17 @@ function showReminderMode() {
   reminderPresets.hidden = at;
 }
 reminderMode.addEventListener("change", showReminderMode);
+const reminderRepeat = document.getElementById("reminder-repeat");
+function showReminderRepeat() {
+  const repeat = reminderRepeat.value;
+  const calendar = ["daily", "weekdays", "weekly"].includes(repeat);
+  if (repeat !== "none") reminderMode.value = calendar ? "at" : "in";
+  reminderMode.disabled = repeat !== "none";
+  document.getElementById("reminder-weekday-wrap").hidden = repeat !== "weekly";
+  document.getElementById("reminder-repeat-hint").hidden = repeat === "none";
+  showReminderMode();
+}
+reminderRepeat.addEventListener("change", showReminderRepeat);
 
 reminderPresets.addEventListener("click", (e) => {
   const preset = e.target.closest("[data-minutes]");
@@ -776,6 +795,11 @@ reminderForm.addEventListener("submit", async (e) => {
       text,
       minutes: byClock ? null : minutes,
       at: byClock ? reminderClock.value : null,
+      recurrence: reminderRepeat.value === "none" ? null : {
+        kind: reminderRepeat.value,
+        ...(reminderRepeat.value === "interval" ? { seconds: minutes * 60 } : {}),
+        ...(reminderRepeat.value === "weekly" ? { weekday: Number(document.getElementById("reminder-weekday").value) } : {}),
+      },
     });
     reminderText.value = "";
     setMessage(reminderMessage, `Listo, te lo recordaré ${when}.`, "ok");
@@ -789,6 +813,7 @@ reminderForm.addEventListener("submit", async (e) => {
 
 // Cuando suena uno, o cuando la IA termina una tarea (quizá creó uno), se actualiza la lista y el contador.
 window.__TAURI__.event.listen("reminder", loadReminders);
+window.__TAURI__.event.listen("reminders-changed", loadReminders);
 window.__TAURI__.event.listen("character-state", (e) => {
   if (e.payload === "success") {
     loadReminders();

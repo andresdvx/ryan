@@ -654,6 +654,56 @@ mark { padding: 0 2px; border-radius: 4px; background: rgb(var(--accent-rgb) / 0
 .undo-note strong { font-size: 13px; color: var(--text); }
 .undo-summary { font-weight: 700; color: var(--text); }
 
+/* ---------- Productividad ---------- */
+.productivity-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.productivity-links .link-btn { border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; background: var(--card); color: var(--text); font-size: 12px; cursor: pointer; }
+#view-today .focus-card, #view-today .routines-card { grid-column: 1 / -1; }
+.focus-overview { display: flex; align-items: center; gap: 22px; padding: 8px 0; }
+.focus-clock {
+  --focus-progress: 0%;
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 132px; height: 132px; flex: none; border-radius: 50%;
+  background: linear-gradient(var(--card), var(--card)) padding-box,
+    conic-gradient(var(--accent) var(--focus-progress), var(--card-2) 0) border-box;
+  border: 4px solid transparent; font-variant-numeric: tabular-nums;
+}
+.focus-clock > span { font-size: 10px; letter-spacing: 0.13em; color: var(--muted); }
+.focus-clock > strong { font-size: 30px; font-weight: 650; letter-spacing: -0.04em; }
+.focus-info { min-width: 0; }
+.focus-info > p { margin: 0 0 7px; }
+.focus-durations { display: flex; gap: 12px; }
+.focus-durations > label { flex: 1; min-width: 0; font-size: 13px; }
+.focus-durations input { display: block; width: 100%; margin-top: 5px; }
+.focus-actions { margin-top: 2px; }
+.focus-card button { font-size: 13px; }
+.routine-list, .routine-editor, .routine-steps, .routine-step-fields { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.routine-editor { padding-top: 12px; border-top: 1px solid var(--line); }
+.routine-card, .routine-review, .routine-running { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); min-width: 0; overflow-wrap: anywhere; }
+.routine-card ol, .routine-review ol { padding-left: 20px; margin: 8px 0 12px; color: var(--muted); font-size: 13px; }
+.routine-card li + li, .routine-review li + li { margin-top: 4px; }
+.routine-card .row button, .routine-review .row button { padding: 6px 10px; font-size: 12px; }
+.routine-review { display: flex; flex-direction: column; gap: 10px; border-color: rgb(var(--accent-rgb) / 0.5); }
+.routine-running { border-left: 3px solid var(--accent); }
+.routine-running p { margin: 0 0 8px; font-size: 13px; }
+.routine-step { display: flex; flex-direction: column; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.routine-step-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.routine-step-heading select { flex: 1 1 170px; min-width: 0; }
+.routine-step-heading button { padding: 6px 9px; font-size: 12px; min-height: 32px; }
+.routine-step-fields:empty { display: none; }
+.routine-step-fields label { font-size: 12px; color: var(--muted); }
+.routine-step-fields input, .routine-step-fields select { display: block; width: 100%; margin-top: 5px; color: var(--text); }
+.repeat-label { display: inline-block; margin-top: 4px; padding: 1px 6px; border-radius: 5px; color: color-mix(in srgb, var(--accent) 60%, white); background: rgb(var(--accent-rgb) / 0.1); font-size: 11px; }
+.recurrence-label { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 140px; font-size: 12px; color: var(--muted); }
+.recurrence-label select { width: 100%; }
+.routines-card h3:has(.link-btn) { gap: 8px; flex-wrap: wrap; }
+@media (max-width: 459px) {
+  .focus-overview { gap: 14px; }
+  .focus-clock { width: 108px; height: 108px; }
+  .focus-clock > strong { font-size: 26px; }
+  .focus-info { font-size: 13px; }
+  .focus-actions > button { flex: 1 1 120px; }
+}
+
 /* ---------- Espacio de trabajo adaptable ---------- */
 .brand { grid-area: brand; border-right: 1px solid var(--line); }
 .workspace-header { grid-area: toolbar; padding: 16px 22px; min-width: 0; border-bottom: 1px solid var(--line); }

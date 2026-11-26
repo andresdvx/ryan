@@ -70,11 +70,35 @@ Pídele: **«Reproduce (canción) en Spotify»**, sustituyendo `(canción)` por 
 
 <img src="docs/images/musica.png" alt="Petición Reproduce (canción) en Spotify, confirmación de reproducción y controles de música en el chat" width="880">
 
-### Recordatorios con cuenta atrás
+### Recordatorios recurrentes y cuenta atrás
 
 Pídele **«Recuérdame descansar en 20 minutos»** o crea un aviso manualmente en **Pendientes**. Consulta cuánto falta, programa una hora concreta y cancela los avisos que ya no necesites.
 
+También puedes pedir **«Recuérdame beber agua cada dos horas»** o **«Recuérdame revisar el proyecto cada viernes a las 09:00»**. El selector **Repetir** ofrece intervalos, todos los días, de lunes a viernes o un día de la semana. Cancelar un aviso recurrente cancela también sus próximas repeticiones.
+
+Se guardan en disco. Con Ryan cerrado no se emiten avisos: al volver se muestra una sola ocurrencia atrasada y se calcula la siguiente, sin acumular notificaciones. Las repeticiones de calendario usan la hora local; si una hora no existe por el cambio de horario, esa fecha se omite.
+
 <img src="docs/images/recordatorios.png" alt="Formulario de recordatorios y lista de avisos para descansar, revisar una propuesta y hacer una llamada" width="880">
+
+### Temporizador de enfoque y descansos
+
+En **Hoy → Enfoque y descansos**, configura un bloque de trabajo de 1–180 minutos y una pausa de 1–60 minutos. Puedes iniciar, pausar, reanudar o finalizar. La cuenta no depende de tener el chat abierto y su estado se guarda al cerrar Ryan.
+
+Al terminar, Ryan avisa y deja preparado el siguiente bloque: **los descansos y las nuevas sesiones se inician manualmente**. El contador muestra los bloques de enfoque completados acumulados. Si una sesión venció con Ryan cerrado, se avisa una vez al volver.
+
+El temporizador no altera tu modo ni tus preferencias. El botón **Modo Concentración** activa el modo silencioso existente; vuelve a Normal desde **Modo** cuando quieras. Si los sonidos están desactivados, el aviso sigue siendo visual.
+
+<img src="docs/images/enfoque.png" alt="Temporizador circular de enfoque con duración de trabajo y descanso, sesiones completadas y controles de inicio, pausa y finalización" width="880">
+
+### Rutinas personalizadas
+
+En **Hoy → Mis rutinas**, crea y ordena hasta 8 pasos por rutina: abrir aplicaciones permitidas, abrir páginas HTTPS, reproducir música en Spotify, crear un recordatorio o consultar tareas, recordatorios y estado del equipo. Puedes guardar hasta 20 rutinas, editarlas y eliminarlas.
+
+Por ejemplo: **abrir tu aplicación de trabajo → consultar tareas → recordarte una pausa**. Guardar una rutina no la ejecuta: primero pulsa **Revisar y ejecutar** y después confirma la lista de pasos.
+
+Las rutinas funcionan sin una llamada a la IA: cada paso pasa por el mismo validador, permisos, confirmaciones y registro que las herramientas del chat. Si falla o cancelas un paso, la rutina se detiene. **Detener tras el paso actual** impide iniciar el siguiente; los pasos anteriores no se revierten automáticamente. No hay ejecución programada ni al iniciar Windows, y no se admiten comandos, borrados o control de otras ventanas.
+
+<img src="docs/images/rutinas.png" alt="Rutina Empezar mi jornada con pasos ordenados y controles para revisar y ejecutar, editar o eliminar" width="880">
 
 ### Tareas y avances parciales
 
@@ -141,6 +165,9 @@ Trae seis personajes; puedes [añadir los tuyos](#añadir-un-personaje).
 | **Chat** | Las respuestas se escriben en directo (con Ollama), una paleta de comandos al escribir `/`, y un selector de proveedor y modelo en la cabecera. Puedes **pegar una captura** (Ctrl + V) o pulsar 👁 para **mirar una ventana**: la ves antes de adjuntarla (con un modelo con visión). |
 | **Barra rápida** | Un campo pequeño sobre el escritorio (atajo **Win + Shift + J**) para pedir algo sin abrir el chat. La respuesta aparece ahí, y si algo necesita tu permiso se abre el chat. Todo queda también en el historial. Toma los colores del personaje que elijas. |
 | **Modos** | **Normal, Trabajo, Descanso y Concentración**: cambian a la vez cómo se comporta la mascota (paseos, comentarios, sonidos) y el tono de las respuestas, y los atajos de *Hoy*. Se aplican por encima de tus ajustes: al volver a Normal todo queda como lo tenías. |
+| **Enfoque** | Temporizador de trabajo y descanso en *Hoy*: duración configurable, pausa, reanudación y sesiones completadas. Se guarda en disco y cada bloque se inicia manualmente. |
+| **Rutinas** | Secuencias personalizadas y manuales de hasta 8 pasos, con revisión antes de ejecutar, permisos habituales y detención ante errores o cancelaciones. |
+| **Recordatorios recurrentes** | Intervalos, diarios, de lunes a viernes y semanales. Conservan la hora local en las repeticiones de calendario y no acumulan avisos perdidos al reabrir. |
 | **Hoy** | Una pestaña con lo importante de un vistazo: lo que suena (con controles), tus próximos recordatorios, batería, memoria y espacio en disco, tu última conversación y atajos para pedir cosas con un clic. |
 | **Historial** | En la pestaña **Registro** (sección *Conversaciones*), tus conversaciones se guardan en tu equipo. Puedes buscarlas (sin importar mayúsculas ni tildes), releerlas y **continuarlas**: Ryan recupera lo que hablasteis. Se puede apagar y borrar en cualquier momento. |
 | **Detalle y Actividad** | Cada mensaje “✔ Moví…” o “✖ …” del chat se **despliega** y enseña qué herramienta se usó, con qué datos, qué devolvió, cuándo, cuánto tardó y si confirmaste tú; con botones para mostrar el resultado en el Explorador, copiar la ruta o abrir la Papelera. La pestaña **Registro** (sección *Lo que hizo Ryan*) guarda ese registro (buscable, con filtros) y permite **deshacer** lo que se puede: mover, copiar, crear, comprimir, recordatorios… (siempre con la confirmación normal). Lo que escribes en otras apps o lees de un archivo no se guarda. |
@@ -307,6 +334,8 @@ Limitaciones con Ollama:
 | --- | --- |
 | Ajustes (atajo, avatar, modelo elegido…) | `%APPDATA%\ZenPet\settings.json` |
 | Memoria, recordatorios, tareas y registro para deshacer | `%APPDATA%\ZenPet\` |
+| Temporizador de enfoque y sesiones acumuladas | `%APPDATA%\ZenPet\focus.json` |
+| Rutinas personalizadas | `%APPDATA%\ZenPet\routines.json` |
 | Historial de conversaciones (un archivo por conversación) | `%APPDATA%\ZenPet\conversations\` |
 | Registro de actividad (últimas 500 acciones) | `%APPDATA%\ZenPet\activity.json` |
 | API keys | Administrador de credenciales de Windows (`zen-pet`) |

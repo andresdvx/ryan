@@ -88,8 +88,8 @@ pub const HEADS_UP_SECS: u64 = 10 * 60;
 /// no avisa (el usuario acaba de pedirlo) y los que ya estaban así al arrancar tampoco.
 #[derive(Debug, Default)]
 pub struct HeadsUpWatcher {
-    far_ahead: HashSet<u64>,
-    warned: HashSet<u64>,
+    far_ahead: HashSet<(u64, u64)>,
+    warned: HashSet<(u64, u64)>,
 }
 
 impl HeadsUpWatcher {
@@ -97,17 +97,18 @@ impl HeadsUpWatcher {
     pub fn observe(&mut self, now: u64, reminders: &[crate::reminders::Reminder]) -> Vec<(String, u64)> {
         let mut soon = Vec::new();
         for reminder in reminders {
+            let occurrence = (reminder.id, reminder.due);
             let remaining = reminder.due.saturating_sub(now);
             if remaining == 0 {
                 continue;
             }
             if remaining > HEADS_UP_SECS {
-                self.far_ahead.insert(reminder.id);
-            } else if self.far_ahead.contains(&reminder.id) && self.warned.insert(reminder.id) {
+                self.far_ahead.insert(occurrence);
+            } else if self.far_ahead.contains(&occurrence) && self.warned.insert(occurrence) {
                 soon.push((reminder.text.clone(), remaining.div_ceil(60)));
             }
         }
-        let alive: HashSet<u64> = reminders.iter().map(|reminder| reminder.id).collect();
+        let alive: HashSet<(u64, u64)> = reminders.iter().map(|reminder| (reminder.id, reminder.due)).collect();
         self.far_ahead.retain(|id| alive.contains(id));
         self.warned.retain(|id| alive.contains(id));
         soon
@@ -223,7 +224,16 @@ mod tests {
     }
 
     fn reminder(id: u64, due: u64) -> crate::reminders::Reminder {
-        crate::reminders::Reminder { id, due, text: format!("reunión {id}") }
+        crate::reminders::Reminder { id, due, text: format!("reunión {id}"), recurrence: None }
+    }
+
+    #[test]
+    fn aviso_previo_se_reinicia_para_cada_ocurrencia() {
+        let mut watcher = HeadsUpWatcher::default();
+        assert!(watcher.observe(0, &[reminder(1, 1200)]).is_empty());
+        assert_eq!(watcher.observe(601, &[reminder(1, 1200)]).len(), 1);
+        assert!(watcher.observe(1200, &[reminder(1, 2400)]).is_empty());
+        assert_eq!(watcher.observe(1801, &[reminder(1, 2400)]).len(), 1);
     }
 
     #[test]

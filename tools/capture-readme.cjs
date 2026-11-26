@@ -48,6 +48,7 @@ async function main() {
       const invoke = async (cmd, args = {}) => {
         switch (cmd) {
           case "get_settings": return data.settings;
+          case "get_productivity": return data.productivity;
           case "get_character": return data.settings.character;
           case "get_assistant_name": return data.settings.assistant_name;
           case "list_reminders": return { items: data.reminders, max: 50 };
@@ -183,6 +184,10 @@ async function main() {
     await load();
     await page.evaluate(async () => { docs.showTab("reminders"); await docs.loadTasks(); await docs.loadReminders(); });
     await save("tareas");
+    await page.locator("#reminder-repeat").selectOption("weekly");
+    await page.locator("#reminder-weekday").selectOption("5");
+    await page.locator("#reminder-clock").fill("09:00");
+    await page.locator("#reminder-text").fill("Revisar el proyecto");
     await page.locator("#reminder-form").evaluate(el => el.closest(".panels").scrollTop = el.offsetTop - el.closest(".panels").offsetTop - 14);
     await save("recordatorios");
 
@@ -207,6 +212,23 @@ async function main() {
     await page.evaluate(async () => { docs.showTab("today"); await docs.loadReminders(); });
     await page.locator(".meter").first().waitFor();
     await save("hoy");
+    await page.evaluate(() => {
+      demo.productivity.focus.status = "running";
+      demo.productivity.focus.deadline = demo.now + 1013;
+      emitDemo("productivity-changed");
+    });
+    await page.locator("#focus-pause").waitFor({ state: "visible" });
+    await scrollPanelTo(".focus-card");
+    await save("enfoque");
+    await page.evaluate(() => {
+      demo.productivity.focus.status = "ready";
+      demo.productivity.focus.deadline = null;
+      emitDemo("productivity-changed");
+    });
+    await page.locator(".routines-card .routine-card button").first().click();
+    await scrollPanelTo(".routines-card");
+    await save("rutinas");
+    await page.locator("#routine-review-cancel").click();
     await scrollPanelTo(".today-system");
     await save("hoy-equipo");
     await page.locator("#view-today .panels").evaluate(el => { el.scrollTop = 0; });

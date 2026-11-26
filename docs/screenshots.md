@@ -23,6 +23,7 @@ El script:
 - Fija la fecha, el idioma, la zona horaria y el personaje para dar consistencia.
 - Captura el chat amplio a 880 × 720, el compacto a 620 × 720, la barra rápida a 640 px, la barra de arrastre a 340 px y el menú de conversión a 380 px. Los PNG se guardan a una escala de 1,5 para mejorar la legibilidad.
 - Genera escenas de funcionalidades: arrastrar, analizar, resumir y convertir archivos; escuchar música; gestionar tareas y recordatorios; organizar el Escritorio y carpetas; explicar una ventana; consultar el estado del equipo y usar la barra rápida.
+- Incluye `enfoque.png` y `rutinas.png`, renderizados desde los nuevos componentes de Hoy con el temporizador y una rutina de demostración.
 - Conserva también las capturas complementarias de ajustes, historial y seguridad en `docs/images/`, aunque ya no ocupan la galería principal del README.
 - Cierra el navegador y el servidor al terminar. Falla si encuentra errores JavaScript.
 
@@ -36,3 +37,13 @@ El ejemplo musical usa «Reproduce (canción) en Spotify»: `(canción)` es un m
 2. Ejecuta el script y revisa los PNG, especialmente los paneles con desplazamiento.
 3. Comprueba que la descripción y el texto alternativo del README correspondan a cada captura.
 4. Incluye el README y las imágenes actualizadas en el mismo cambio.
+
+## Prueba de interfaz de productividad
+
+Con las mismas dependencias y `NODE_PATH`, ejecuta:
+
+```powershell
+node tools/test-productivity.cjs
+```
+
+Comprueba el formulario de recurrencia, los controles del temporizador, la creación y edición de rutinas, la revisión antes de ejecutar, la cancelación y los anchos de 380, 620 y 880 px. Usa una API simulada; la persistencia y los permisos reales se prueban con `cargo test --workspace`.

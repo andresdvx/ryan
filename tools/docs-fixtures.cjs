@@ -35,7 +35,7 @@ const settings = {
 };
 const reminders = [
   { id: 1, text: "Estirar las piernas y beber agua", due: now + 1200 },
-  { id: 2, text: "Revisar la propuesta del proyecto", due: now + 5400 },
+  { id: 2, text: "Revisar la propuesta del proyecto", due: now + 5400, recurrence: { kind: "weekdays", hour: 11, minute: 30 }, repeat_label: "De lunes a viernes" },
   { id: 3, text: "Llamar a la veterinaria", due: now + 10800 },
 ];
 const tasks = [
@@ -64,4 +64,12 @@ const fileMenu = {
   ],
   output: { label: "Escritorio", path: "C:\\Users\\Demo\\Desktop", custom: false },
 };
-module.exports = { now, settings, reminders, tasks, conversations, activity, media, fileMenu };
+const productivity = {
+  focus: { phase: "focus", status: "ready", work_minutes: 25, break_minutes: 5, remaining_seconds: 1500, deadline: null, completed: 2 },
+  routines: [{ id: 1, name: "Empezar mi jornada", steps: [
+    { tool: "list_tasks", args: {} },
+    { tool: "set_reminder", args: { text: "Hacer una pausa", delay_seconds: 1500 } },
+  ] }],
+  active_routine: null,
+};
+module.exports = { now, settings, reminders, tasks, conversations, activity, media, fileMenu, productivity };

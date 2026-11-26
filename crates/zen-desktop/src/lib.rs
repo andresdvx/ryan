@@ -35,6 +35,7 @@ mod uia;
 mod powershell;
 mod read_tools;
 mod reminders;
+pub mod productivity;
 mod tasks;
 mod screen;
 mod screen_tools;
